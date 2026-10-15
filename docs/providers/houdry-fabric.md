@@ -70,12 +70,14 @@ The launcher runs `node integrations/houdry-fabric/resolve.mjs` first. That reso
 |---|---|
 | Which plane | An address you exported, else a LAN browse over UDP `41808` and mDNS `_houdry._tcp.local`, with each reply confirmed through `/.well-known/houdry.json`, else a control plane already listening here on `18080`, `8090` or `8080`. |
 | Which certificate | `HOUDRY_FABRIC_CA` you point at, else the CA already pinned for that plane's origin, re-checked against the plane before use, else the root in `~/.houdry/server/pki`, else a first-use fetch of `/v1/pki/ca` — refused for any host outside your private network. |
-| Which credential | `HOUDRY_FABRIC_KEY` if you exported one; a plane advertising `auth` without one stops the launch. |
+| Which credential | `HOUDRY_FABRIC_KEY` if you exported one, else the token the last launch that worked stored; a plane advertising `auth` with neither stops the launch. |
 | Which models | `GET /v1/models` on that plane, listed now, so the model picker holds what the cluster can actually serve. |
 
 Pins live in `~/.houdry-dsh`: one `houdry-tofu-ca.json` record per origin, and one PEM per origin under `cas/`, because `NODE_EXTRA_CA_CERTS` names a single file that Node then trusts for every host.
 
 Nothing is launched until all four have answered. A plane you cannot reach, a CA that changed since you last pinned it, a plane asking for a token you did not export, and a catalog that refused to list each stop with exit 2 and a message naming the address and the file — rather than surfacing three messages later as a model error.
+
+Export the token once and the launch that the plane authenticates keeps it. The address goes beside the pins, in `fabric-connection.json` inside the trust directory; the token goes into `$DSH_HOME/.credentials.yaml`, the document `dsh` reads every provider key from — the same one **Settings → Models** writes. A restart with an empty environment then reconnects to that plane and resolves the key again inside `dsh`, so the token is never carried back out through the launcher. An exported value always outranks the stored one for the run that exports it, and `--no-save` keeps a launch from remembering anything. `dsh headless` does not read that document at all — Troubleshooting says why.
 
 ### 4. Or configure the provider by hand
 
@@ -99,6 +101,8 @@ npx @deepseek-ai/dsh web
 ```
 
 A plane started with `serve --data DIR` keeps its CA at `DIR/pki/root_ca.crt`. Whichever way you configure the provider, the same two facts hold: the address and the certificate are read when the profile loads, so a plane that moves needs `dsh` restarted, and the hand-written model list does not follow the cluster as nodes come and go.
+
+A key saved on that page is written to `$DSH_HOME/.credentials.yaml` under the reference the route names. The fabric route names `HOUDRY_FABRIC_KEY`, so a launch through the integration scripts reads the copy you typed there instead of asking for it again.
 
 ## Usage
 
@@ -219,6 +223,14 @@ The model is in the catalog but not pulled on any worker:
 ollama pull tinyllama
 ```
 
+### Asked for the token again after a restart
+
+**Symptom**: the launcher stops with "this plane asks for a token and none was exported or stored", on a plane you connected to yesterday.
+
+The stored token lives in the harness home, so a home that is not the one yesterday's launch wrote is a document that does not hold it: a different user, a container, or `DSH_HOME` set by whatever starts `dsh`. Check that variable first. `dsh headless` never reads that document — one-shot jobs are given their credentials at launch by design — so it needs `HOUDRY_FABRIC_KEY` exported every time. A launch that used `--no-save`, or `HOUDRY_FABRIC_NO_SAVE`, stored nothing either.
+
+When the message names the **stored** token instead, the plane did answer and rejected what the document holds: it was started with a different `serve --token` than the one remembered. Export the current value and the next launch that authenticates replaces the stored copy; the refused value is never kept. The same goes for a key you type on **Settings → Models**, which writes that document directly.
+
 ### The plane is reachable but never discovered
 
 `houdry serve` asks the system to allow inbound UDP `41808` and its TCP port. Run without elevation on Windows, it prints the `netsh` command it could not apply and continues to serve loopback only, so a LAN peer never hears the probe. A guest SSID that isolates clients blocks the same browse from the other side. `HOUDRY_FABRIC_URL` is the route in for a plane you can reach but not discover, and `--no-mdns` narrows the browse to UDP when a network drops multicast.
@@ -241,16 +253,17 @@ Read by `resolve.mjs` and exported for the `dsh` process. Both launchers read th
 
 | Variable | Default | Use |
 |---|---|---|
-| `HOUDRY_FABRIC_URL` | *discovered* | Skips the LAN browse and uses this address. `HOUDRY_BASE_URL` is accepted as the older name. |
-| `HOUDRY_FABRIC_KEY` | `no-key-required` | The plane's `serve --token` value. The default is a placeholder, because pi-ai's client refuses a route that names no credential. |
+| `HOUDRY_FABRIC_URL` | the saved plane, else *discovered* | Uses this address instead of the one the last launch recorded or a LAN browse. `HOUDRY_BASE_URL` is accepted as the older name. |
+| `HOUDRY_FABRIC_KEY` | the stored token, else `no-key-required` | The plane's `serve --token` value. The default is a placeholder, because pi-ai's client refuses a route that names no credential. |
 | `HOUDRY_FABRIC_CA` | *pinned on first use* | A CA file you obtained another way; it outranks the pin. |
-| `HOUDRY_FABRIC_TOFU_DIR` | `~/.houdry-dsh` | Where the per-origin pins live. |
+| `HOUDRY_FABRIC_TOFU_DIR` | `~/.houdry-dsh` | Where the per-origin pins and the saved plane address live. |
 | `HOUDRY_FABRIC_REPIN` | *off* | `1`, `true`, `yes` or `on` re-pins the CA for this launch. |
+| `HOUDRY_FABRIC_NO_SAVE` | *off* | The same four values keep this launch from recording the plane or its token. |
 | `HOUDRY_FABRIC_INSECURE` | *off* | The same four values skip certificate verification. Local development only. |
 | `HOUDRY_FABRIC_MODELS` | *from the plane* | The model list the route serves; the launcher fills it from `GET /v1/models`. |
 | `DSH_CMD` | `dsh` | The command to launch, split with quotes honored, e.g. `pnpm dsh`. |
 
-Resolver flags: `--repin`, `--timeout <ms>`, `--no-mdns`, `--json`. Fabric-side variables such as `HOUDRY_OLLAMA` belong to `houdry serve`, not to this launcher:
+Resolver flags: `--repin`, `--no-save`, `--timeout <ms>`, `--no-mdns`, `--json`. Fabric-side variables such as `HOUDRY_OLLAMA` belong to `houdry serve`, not to this launcher:
 
 ```bash
 # Override Ollama URL for fabric local fallback (advanced)
@@ -260,7 +273,7 @@ export HOUDRY_OLLAMA="http://192.168.1.100:11434"
 ## Security
 
 - **mTLS**: GPU workers use client certificates. The `/v1` API requires only server TLS.
-- **Token auth**: Pass `--token` to `houdry serve` for API key authentication. Add it to DeepSeek Harness "API Key" field.
+- **Token auth**: Pass `--token` to `houdry serve` for API key authentication. Add it to DeepSeek Harness "API Key" field, or export it once and the launch the plane authenticates stores it. Either way the copy is `$DSH_HOME/.credentials.yaml`, written under a lock at mode 0600 in a 0700 directory and kept as recoverable plaintext: a process running as your user can read it, no OS keychain is wired in, and on Windows the protection comes from your account's ownership rather than a mode bit. It is never written to the trust directory, never printed on the launcher's stdout, and never passed in the launched process's command line.
 - **First contact**: The one CA fetch that has no pin to check against is unverified, so pinning is refused outside a private address range, and every later run re-checks the plane through the pinned CA.
 - **Network**: Keep fabric on a private network. Do not expose to public internet without additional auth.
 

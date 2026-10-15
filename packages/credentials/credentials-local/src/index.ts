@@ -439,12 +439,18 @@ function mutableDocument(text: string | undefined): Document {
 
 /**
  * Render the next document text with one reference set or deleted.
+ *
+ * Public because a process that runs before the harness starts — the fabric
+ * launcher, which must store the token it just authenticated with — has to
+ * edit this document through the same serializer that reads it. A second
+ * writer would be a second set of formatting, comment and version rules, and
+ * only one of them would be the one the product trusts.
  * @param text - the current document text, `undefined` while the file is absent.
  * @param ref - the reference to write.
  * @param value - the new value, or `undefined` to delete the key.
  * @returns the text to persist.
  */
-function renderRef(text: string | undefined, ref: CredentialRef, value: string | undefined): string {
+export function renderRef(text: string | undefined, ref: CredentialRef, value: string | undefined): string {
   const document = mutableDocument(text)
   if (value === undefined) deleteSectionEntry(document, 'refs', ref)
   else document.setIn(['refs', ref], value)

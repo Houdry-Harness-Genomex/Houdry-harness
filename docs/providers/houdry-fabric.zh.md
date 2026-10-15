@@ -70,12 +70,14 @@ pwsh integrations/houdry-fabric/start.ps1             # Windows
 |---|---|
 | 哪个控制面 | 你导出的地址；否则在 UDP `41808` 与 mDNS `_houdry._tcp.local` 上浏览局域网，每个应答都要经 `/.well-known/houdry.json` 确认；再否则采用本机 `18080`、`8090` 或 `8080` 上已在监听的控制面。 |
 | 哪个证书 | 你指定的 `HOUDRY_FABRIC_CA`；否则该控制面 origin 已固定的 CA，使用前会再与控制面核对一次；再否则 `~/.houdry/server/pki` 里的根证书；最后才是首次使用时抓取 `/v1/pki/ca`——私有网络之外的主机一律拒绝。 |
-| 哪个凭据 | 你导出了 `HOUDRY_FABRIC_KEY` 就用它；声明了 `auth` 却没有凭据的控制面会直接中止启动。 |
+| 哪个凭据 | 你导出了 `HOUDRY_FABRIC_KEY` 就用它，否则用上一次被控制面接受的那次启动存下的令牌；两者都没有而控制面声明了 `auth`，会直接中止启动。 |
 | 哪些模型 | 立刻向该控制面请求 `GET /v1/models`，模型选择器因此只列出集群此刻真能服务的模型。 |
 
 固定结果保存在 `~/.houdry-dsh`：每个 origin 一条 `houdry-tofu-ca.json` 记录，`cas/` 下每个 origin 一份 PEM，因为 `NODE_EXTRA_CA_CERTS` 只能指定一个文件，而 Node 会把它用于所有主机。
 
 这四项都有答案之前不会启动任何东西。无法联系的控制面、上次固定之后变更过的 CA、索要未导出令牌的控制面、拒绝列出模型的目录，每一种都会以退出码 2 停止，并给出写明地址与文件名的消息——而不是在三条消息之后表现为一次模型错误。
+
+控制面认下令牌的那次启动会把它留下来。地址记在信任目录里的 `fabric-connection.json`，紧挨着固定结果；令牌写进 `$DSH_HOME/.credentials.yaml`，也就是 `dsh` 读取所有提供方密钥的那份文档——与**设置 → 模型**写入的是同一份。于是空环境重启也能连回那个控制面，密钥仍由 `dsh` 自己解析，令牌不会经启动脚本再传出去。对导出它的那次运行而言，导出的值始终高于保存的值；`--no-save` 让一次启动什么都不记。`dsh headless` 完全不读这份文档，原因见排障一节。
 
 ### 4. 或者手工配置提供方
 
@@ -99,6 +101,8 @@ npx @deepseek-ai/dsh web
 ```
 
 用 `serve --data DIR` 启动的控制面把 CA 保存在 `DIR/pki/root_ca.crt`。无论用哪种方式配置提供方，都有同样的两点：地址与证书在 profile 加载时读取，所以控制面迁移后必须重启 `dsh`；手工写入的模型列表不会随节点上下线而跟随集群变化。
+
+在那一页保存的密钥写入 `$DSH_HOME/.credentials.yaml`，用的键名是路由指定的引用。fabric 路由指定 `HOUDRY_FABRIC_KEY`，所以通过集成脚本启动时读到的就是你在页面上输入的那一份，不必再要一次。
 
 ## 使用
 
@@ -219,6 +223,14 @@ houdry serve --openai-wait 15m
 ollama pull tinyllama
 ```
 
+### 重启后又一次索要令牌
+
+**症状**：昨天还连得上的控制面，启动脚本却以「这个控制面索要令牌，而没有导出或保存任何令牌」停止。
+
+保存的令牌住在 harness 主目录里，所以主目录不是昨天那次启动写入的那一个，这份文档里就没有它：换了用户、换了容器，或者由启动 `dsh` 的那一层设置了 `DSH_HOME`。先检查这个变量。`dsh headless` 从不读这份文档——一次性任务按设计在启动时取得凭据——因此每次都要导出 `HOUDRY_FABRIC_KEY`。用了 `--no-save` 或 `HOUDRY_FABRIC_NO_SAVE` 的启动同样什么都没存。
+
+消息里点名的若是**保存的**令牌，说明控制面应答了并拒绝了文档里那份：它当初用 `serve --token` 启动的值与记住的不同。导出当前值，下一次被控制面接受的启动会替换保存的那份；被拒绝的值从不写入。在**设置 → 模型**里填写密钥是一样的，那一页直接写这份文档。
+
 ### 控制面可达却始终发现不了
 
 `houdry serve` 会请求系统放行入站的 UDP `41808` 与它的 TCP 端口。在 Windows 上以非管理员身份运行时，它会打印没能应用的 `netsh` 命令，然后继续只提供回环服务，于是局域网里的对端永远收不到探测。会隔离客户端的访客 SSID 从另一侧阻断同一次浏览。对于可达却无法发现的控制面，`HOUDRY_FABRIC_URL` 就是入口；当网络丢弃组播时，用 `--no-mdns` 把浏览收窄到 UDP。
@@ -241,16 +253,17 @@ ollama pull tinyllama
 
 | 变量 | 默认值 | 用途 |
 |---|---|---|
-| `HOUDRY_FABRIC_URL` | *自动发现* | 跳过局域网浏览，直接使用这个地址。`HOUDRY_BASE_URL` 作为旧名字同样接受。 |
-| `HOUDRY_FABRIC_KEY` | `no-key-required` | 控制面 `serve --token` 的值。默认值是占位符，因为 pi-ai 的客户端会拒绝没有凭据的路由。 |
+| `HOUDRY_FABRIC_URL` | 保存的控制面，否则*自动发现* | 直接用这个地址，而不是上次启动记下的那一个，也不是局域网浏览。`HOUDRY_BASE_URL` 作为旧名字同样接受。 |
+| `HOUDRY_FABRIC_KEY` | 保存的令牌，否则 `no-key-required` | 控制面 `serve --token` 的值。默认值是占位符，因为 pi-ai 的客户端会拒绝没有凭据的路由。 |
 | `HOUDRY_FABRIC_CA` | *首次使用时固定* | 你以其他方式取得的 CA 文件；它优先于固定结果。 |
-| `HOUDRY_FABRIC_TOFU_DIR` | `~/.houdry-dsh` | 每个 origin 的固定结果存放位置。 |
+| `HOUDRY_FABRIC_TOFU_DIR` | `~/.houdry-dsh` | 每个 origin 的固定结果与保存的控制面地址的存放位置。 |
 | `HOUDRY_FABRIC_REPIN` | *关闭* | `1`、`true`、`yes` 或 `on` 会为本次启动重新固定 CA。 |
+| `HOUDRY_FABRIC_NO_SAVE` | *关闭* | 同样这四个值让本次启动不记录控制面，也不记录它的令牌。 |
 | `HOUDRY_FABRIC_INSECURE` | *关闭* | 同样这四个值会跳过证书校验。仅用于本地开发。 |
 | `HOUDRY_FABRIC_MODELS` | *来自控制面* | 这条路由提供的模型列表；启动脚本用 `GET /v1/models` 填充它。 |
 | `DSH_CMD` | `dsh` | 要启动的命令，按引号切分，例如 `pnpm dsh`。 |
 
-解析器的开关：`--repin`、`--timeout <ms>`、`--no-mdns`、`--json`。`HOUDRY_OLLAMA` 这类 fabric 侧变量属于 `houdry serve`，不属于这个启动脚本：
+解析器的开关：`--repin`、`--no-save`、`--timeout <ms>`、`--no-mdns`、`--json`。`HOUDRY_OLLAMA` 这类 fabric 侧变量属于 `houdry serve`，不属于这个启动脚本：
 
 ```bash
 # Override Ollama URL for fabric local fallback (advanced)
@@ -260,7 +273,7 @@ export HOUDRY_OLLAMA="http://192.168.1.100:11434"
 ## 安全
 
 - **mTLS**：GPU worker 使用客户端证书。`/v1` API 只要求服务端 TLS。
-- **令牌认证**：给 `houdry serve` 传入 `--token` 即可启用 API 密钥认证，并把它填进 DeepSeek Harness 的「API 密钥」。
+- **令牌认证**：给 `houdry serve` 传入 `--token` 即可启用 API 密钥认证。把它填进 DeepSeek Harness 的「API 密钥」，或者只导出一次、由控制面认下的那次启动替你存下。无论哪种，保存的位置都是 `$DSH_HOME/.credentials.yaml`：在 0700 目录下以 0600 写入，写入时持有文件锁，内容是可直接还原的明文——以你的用户身份运行的进程能读到它，也没有接入任何系统钥匙串；在 Windows 上保护它的是你账户的所有权，而不是权限位。它从不写入信任目录，从不出现在启动脚本的标准输出上，也从不放进被启动进程的命令行。
 - **首次联系**：唯一一次没有既有固定可对照的 CA 抓取是不验证的，因此私有地址段之外一律拒绝固定，而之后每次运行都会通过已固定的 CA 复核控制面。
 - **网络**：把 fabric 留在私有网络里。没有额外认证就不要暴露到公网。
 

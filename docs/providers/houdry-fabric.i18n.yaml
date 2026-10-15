@@ -21,11 +21,11 @@
   en: 369cc7e0df575c4a
   zh: 8f6cc89531ff00c2
 /houdry-fabric-provider/setup/3-start-deepseek-harness-against-the-fabric:
-  en: e3f93152db15a41a
-  zh: 9d80993a333cef67
+  en: 23a9151f441ed369
+  zh: 1a5bd28a15bd058f
 /houdry-fabric-provider/setup/4-or-configure-the-provider-by-hand:
-  en: 7e0a4b74ac0bb622
-  zh: f4b69ea20c20b65a
+  en: 77f74c0c53f35d01
+  zh: 00b9ebdee968dbbd
 /houdry-fabric-provider/usage:
   en: 63bfd61a0561b255
   zh: 23816953c89cecf5
@@ -62,6 +62,9 @@
 /houdry-fabric-provider/troubleshooting/model-not-found:
   en: d9e8d2816bdf0c09
   zh: 27713eb40aeb2706
+/houdry-fabric-provider/troubleshooting/asked-for-the-token-again-after-a-restart:
+  en: 04da0466ecdb2a3b
+  zh: 0227c56a6ebfee07
 /houdry-fabric-provider/troubleshooting/the-plane-is-reachable-but-never-discovered:
   en: 2a08a037d0381d2a
   zh: 0de74cf2af722e51
@@ -72,11 +75,11 @@
   en: e86de6f1ca3b4761
   zh: d965fbda71ab2a01
 /houdry-fabric-provider/configuration-reference/environment-variables:
-  en: 8b388bcdebccc947
-  zh: 30eab069ac1b6796
+  en: f2d77f3ee5f876d4
+  zh: 9761319419d31142
 /houdry-fabric-provider/security:
-  en: 43ed04774e940709
-  zh: b3a4c7e26a311d77
+  en: 2477e7553f195a1f
+  zh: 2cd19a42511cfed6
 /houdry-fabric-provider/links:
   en: 3991ee25f2715589
   zh: d82ec0ef1a94d718
