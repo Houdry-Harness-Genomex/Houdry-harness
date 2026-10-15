@@ -1,0 +1,226 @@
+# Houdry Fabric Provider
+
+Connect DeepSeek Harness to [Houdry](https://github.com/houdry-genomex/houdry) — a private GPU fabric that routes inference to your organization's GPU resources.
+
+## What is Houdry?
+
+Houdry is a sovereign AI execution platform that keeps computation, models, and data within your infrastructure. It:
+
+- Discovers GPUs on your organization's machines
+- Forms them into a managed cluster
+- Routes inference requests intelligently across available resources
+- Exposes an OpenAI-compatible API
+
+DeepSeek Harness uses Houdry as a model backend, similar to how it connects to OpenAI, Anthropic, or local Ollama.
+
+## Architecture
+
+```text
+DeepSeek Harness
+    ↓
+Houdry fabric /v1 API
+    ↓
+Router (model=auto) + Scheduler
+    ↓
+GPU worker nodes
+    ↓
+Model runtimes (Ollama/vLLM/llama.cpp)
+```
+
+## Setup
+
+### 1. Install and start Houdry fabric
+
+On your control plane machine:
+
+```bash
+curl -fsSL https://github.com/houdry-genomex/houdry/releases/latest/download/install.sh | sh
+export PATH="$HOME/.houdry/bin:$PATH"
+houdry serve --listen 0.0.0.0:8080
+```
+
+### 2. Add GPU workers
+
+On each GPU machine:
+
+```bash
+houdry gpu detect
+houdry gpu register
+```
+
+The worker finds the control plane via WiFi discovery and stays running.
+
+### 3. Configure provider in DeepSeek Harness
+
+1. Open Settings → Models
+2. Click "Add model provider"
+3. Select "Custom model API"
+4. Fill in:
+   - **Name**: `Houdry Fabric`
+   - **Protocol**: `OpenAI Chat Completions`
+   - **Base URL**: `https://<fabric-host>:8080/v1`
+   - **API Key**: (leave empty unless fabric has `--token`)
+   - **Custom CA Certificate**: Paste contents of `~/.houdry/server/pki/root_ca.crt`
+5. Click "Fetch available models"
+6. Select models to enable
+7. Save
+
+### 4. Trust TLS certificate
+
+Since Houdry uses a self-signed CA:
+
+```bash
+export NODE_EXTRA_CA_CERTS="$HOME/.houdry/server/pki/root_ca.crt"
+npx @deepseek-ai/dsh web
+```
+
+Or paste the CA certificate into the provider configuration UI (step 3 above).
+
+## Usage
+
+### Model selection
+
+- **`auto`** (recommended): Houdry's router analyzes your prompt and selects the best model + GPU node
+- **Explicit model** (e.g., `qwen2.5-coder:1.5b`): Pins to that model; Houdry still picks the node
+
+The router considers:
+- Prompt modality (text, code, vision, documents)
+- Complexity (0-100 score)
+- Model capabilities (chat, code, reasoning, vision, tools)
+- GPU availability (VRAM, model already loaded)
+- Node status (READY, not BUSY)
+
+### Function calling
+
+Houdry supports OpenAI-style function calling when using tool-capable models. The fabric forwards `tools` and `tool_choice` to the model runtime and returns structured `tool_calls`.
+
+Use models like `qwen2.5-coder:1.5b` for reliable tool use.
+
+### Streaming
+
+Streaming is supported. The fabric currently buffers the full response then streams it (post-completion SSE). Token-by-token runtime streaming is planned.
+
+## Verification
+
+Test connectivity before configuring DeepSeek Harness:
+
+```bash
+curl --cacert "$HOME/.houdry/server/pki/root_ca.crt" \
+  https://127.0.0.1:8080/v1/models
+```
+
+Expected: JSON list with `"id": "auto"` plus available models.
+
+Chat completion test:
+
+```bash
+curl --cacert "$HOME/.houdry/server/pki/root_ca.crt" \
+  https://127.0.0.1:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "auto",
+    "messages": [{"role": "user", "content": "Hello"}]
+  }'
+```
+
+## Troubleshooting
+
+### Certificate errors
+
+**Symptom**: TLS handshake failures, certificate invalid
+
+**Fix**: Trust the Houdry Root CA:
+
+```bash
+export NODE_EXTRA_CA_CERTS="$HOME/.houdry/server/pki/root_ca.crt"
+```
+
+Or paste the CA certificate into the "Custom CA Certificate" field in provider settings.
+
+### No models available
+
+**Check**:
+- Fabric is running: `curl --cacert ~/.houdry/server/pki/root_ca.crt https://127.0.0.1:8080/healthz`
+- GPU worker is registered: `houdry node list --server https://127.0.0.1:8080`
+- Models exist on worker: `houdry model list --server https://127.0.0.1:8080`
+
+If no GPU worker, start local Ollama on the control plane machine as fallback.
+
+### Request timeout
+
+**Default timeout**: 10 minutes
+
+**Increase it**:
+
+```bash
+houdry serve --openai-wait 15m
+```
+
+Check node status — a BUSY node won't accept new jobs until its current work completes.
+
+### Model not found
+
+The model is in the catalog but not pulled on any worker:
+
+```bash
+# On GPU worker machine
+ollama pull tinyllama
+```
+
+## Configuration Reference
+
+### Provider fields
+
+| Field | Value |
+|-------|-------|
+| Name | `Houdry Fabric` (or custom) |
+| Protocol | `OpenAI Chat Completions` |
+| Base URL | `https://<host>:8080/v1` |
+| API Key | Empty (or fabric `--token` value) |
+| Custom CA Certificate | Contents of `~/.houdry/server/pki/root_ca.crt` |
+
+### Environment variables
+
+```bash
+# Trust Houdry CA for Node.js
+export NODE_EXTRA_CA_CERTS="$HOME/.houdry/server/pki/root_ca.crt"
+
+# Override Ollama URL for fabric local fallback (advanced)
+export HOUDRY_OLLAMA="http://192.168.1.100:11434"
+```
+
+## Security
+
+- **mTLS**: GPU workers use client certificates. The `/v1` API requires only server TLS.
+- **Token auth**: Pass `--token` to `houdry serve` for API key authentication. Add it to DeepSeek Harness "API Key" field.
+- **Network**: Keep fabric on a private network. Do not expose to public internet without additional auth.
+
+## Links
+
+- Houdry repository: https://github.com/houdry-genomex/houdry
+- Fabric documentation: [docs/](https://github.com/houdry-genomex/houdry/tree/main/docs)
+- OpenAI-compatible API spec: [docs/OpenAI-compatible-API.md](https://github.com/houdry-genomex/houdry/blob/main/docs/OpenAI-compatible-API.md)
+- Houdry Agent (alternative Desktop client): https://github.com/houdry-genomex/houdry-agent
+
+## Comparison: Houdry vs Local Ollama
+
+| Feature | Local Ollama | Houdry Fabric |
+|---------|--------------|---------------|
+| Setup | Single machine | Multi-node cluster |
+| Routing | Manual model selection | Automatic routing (model=auto) |
+| GPU pooling | One machine's GPUs | All registered GPU machines |
+| Scheduling | None (one request at a time) | Queue + node selection |
+| Discovery | localhost:11434 | WiFi mDNS + manual URL |
+| Security | No auth | mTLS (workers) + optional token (API) |
+
+Use local Ollama for single-machine development. Use Houdry when you have multiple GPU machines and want intelligent routing.
+
+## Summary
+
+1. Install Houdry fabric: `houdry serve`
+2. Register GPU workers: `houdry gpu register`
+3. Add Houdry as custom OpenAI provider in DeepSeek Harness settings
+4. Trust the CA certificate
+5. Chat with `model=auto` for intelligent routing
+
+The integration uses Houdry's standard OpenAI-compatible `/v1` API — no custom code needed.
