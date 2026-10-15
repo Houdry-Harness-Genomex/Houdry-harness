@@ -60,7 +60,6 @@ The worker finds the control plane via WiFi discovery and stays running.
    - **Protocol**: `OpenAI Chat Completions`
    - **Base URL**: `https://<fabric-host>:8080/v1`
    - **API Key**: (leave empty unless fabric has `--token`)
-   - **Custom CA Certificate**: Paste contents of `~/.houdry/server/pki/root_ca.crt`
 5. Click "Fetch available models"
 6. Select models to enable
 7. Save
@@ -74,13 +73,13 @@ export NODE_EXTRA_CA_CERTS="$HOME/.houdry/server/pki/root_ca.crt"
 npx @deepseek-ai/dsh web
 ```
 
-Or paste the CA certificate into the provider configuration UI (step 3 above).
+`dsh` has no per-provider CA field and trusts certificates only through the process environment, so this export is required rather than one of two options. A plane started with `serve --data DIR` keeps its CA at `DIR/pki/root_ca.crt`. See [Houdry fabric integration](../../integrations/houdry-fabric/INTEGRATION.md) for the launchers that set it.
 
 ## Usage
 
 ### Model selection
 
-- **`auto`** (recommended): Houdry's router analyzes your prompt and selects the best model + GPU node
+- **`auto`**: Houdry's router analyzes your prompt and selects the best model + GPU node. Requires a node that can actually hold its pick — see the caveat below.
 - **Explicit model** (e.g., `qwen2.5-coder:1.5b`): Pins to that model; Houdry still picks the node
 
 The router considers:
@@ -90,11 +89,16 @@ The router considers:
 - GPU availability (VRAM, model already loaded)
 - Node status (READY, not BUSY)
 
+If the selected model needs more VRAM than any registered node can free, the job stays `queued` and the request returns nothing until `--openai-wait` expires. `houdry job list --json` prints each queued job's `requirements.min_vram_bytes` against `houdry node list`, which is where you read the fit.
+
 ### Function calling
 
 Houdry supports OpenAI-style function calling when using tool-capable models. The fabric forwards `tools` and `tool_choice` to the model runtime and returns structured `tool_calls`.
 
-Use models like `qwen2.5-coder:1.5b` for reliable tool use.
+Two conditions on that, both measured against `dsh`:
+
+- **Only the cluster path keeps a tool transcript.** A routed job forwards the full message array including `tool_call_id`, so successive steps see their own results. The plane's local fallback collapses history to text-only `user`/`assistant`/`system` turns, so tool calls and results are dropped without an error. Keep a GPU node READY for any session that uses tools.
+- **The model has to be large enough for the harness prompt.** `dsh` sends a system prompt and tool catalog far larger than a chat demo's. A measured turn on `qwen2.5-coder:1.5b` answered a plain one-sentence request by inventing `get_goal` / `update_goal` calls. Size the model to the harness, not to the API.
 
 ### Streaming
 
@@ -135,7 +139,7 @@ curl --cacert "$HOME/.houdry/server/pki/root_ca.crt" \
 export NODE_EXTRA_CA_CERTS="$HOME/.houdry/server/pki/root_ca.crt"
 ```
 
-Or paste the CA certificate into the "Custom CA Certificate" field in provider settings.
+This has to be set before `dsh` launches; it is read at process start, and there is no per-provider certificate field to fall back on.
 
 ### No models available
 
@@ -156,7 +160,7 @@ If no GPU worker, start local Ollama on the control plane machine as fallback.
 houdry serve --openai-wait 15m
 ```
 
-Check node status — a BUSY node won't accept new jobs until its current work completes.
+Check node status — a BUSY node won't accept new jobs until its current work completes. A job that never starts at all is usually a fit problem: the router's model needs more VRAM than the node has, so it queues instead of failing.
 
 ### Model not found
 
@@ -177,7 +181,7 @@ ollama pull tinyllama
 | Protocol | `OpenAI Chat Completions` |
 | Base URL | `https://<host>:8080/v1` |
 | API Key | Empty (or fabric `--token` value) |
-| Custom CA Certificate | Contents of `~/.houdry/server/pki/root_ca.crt` |
+| TLS trust | `NODE_EXTRA_CA_CERTS` on the `dsh` process; no per-provider field exists |
 
 ### Environment variables
 

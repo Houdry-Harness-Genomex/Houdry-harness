@@ -4,7 +4,7 @@
       houdry:
         displayName: Houdry Fabric
         api: openai-completions
-        baseURL: https://127.0.0.1:8080/v1
+        baseURL: !!js process.env.HOUDRY_FABRIC_URL || 'https://127.0.0.1:8080/v1'
         apiKeyEnv: HOUDRY_FABRIC_KEY
         compat:
           # The fabric decodes only system/user/assistant turns on its local
