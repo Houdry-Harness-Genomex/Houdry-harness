@@ -1,5 +1,7 @@
 # Houdry Fabric Provider
 
+English | [中文](houdry-fabric.zh.md)
+
 Connect DeepSeek Harness to [Houdry](https://github.com/houdry-genomex/houdry) — a private GPU fabric that routes inference to your organization's GPU resources.
 
 ## What is Houdry?
@@ -8,7 +10,7 @@ Houdry is a sovereign AI execution platform that keeps computation, models, and 
 
 - Discovers GPUs on your organization's machines
 - Forms them into a managed cluster
-- Routes inference requests intelligently across available resources
+- Routes inference requests across available resources
 - Exposes an OpenAI-compatible API
 
 DeepSeek Harness uses Houdry as a model backend, similar to how it connects to OpenAI, Anthropic, or local Ollama.
@@ -48,9 +50,34 @@ houdry gpu detect
 houdry gpu register
 ```
 
-The worker finds the control plane via WiFi discovery and stays running.
+The worker finds the control plane over the LAN and stays running.
 
-### 3. Configure provider in DeepSeek Harness
+### 3. Start DeepSeek Harness against the fabric
+
+The [Houdry fabric integration](../../integrations/houdry-fabric/INTEGRATION.md) in this repository is the short path: one command resolves the plane, its certificate, its credential and its model list, then starts the Web UI with the provider route applied.
+
+```sh
+sh integrations/houdry-fabric/start.sh                # POSIX shells
+```
+
+```powershell
+pwsh integrations/houdry-fabric/start.ps1             # Windows
+```
+
+The launcher runs `node integrations/houdry-fabric/resolve.mjs` first. That resolver makes the same four decisions the [Houdry Agent](https://github.com/houdry-genomex/houdry-agent) makes in its own client, in the same order:
+
+| Decision | How it is reached |
+|---|---|
+| Which plane | An address you exported, else a LAN browse over UDP `41808` and mDNS `_houdry._tcp.local`, with each reply confirmed through `/.well-known/houdry.json`, else a control plane already listening here on `18080`, `8090` or `8080`. |
+| Which certificate | `HOUDRY_FABRIC_CA` you point at, else the CA already pinned for that plane's origin, re-checked against the plane before use, else the root in `~/.houdry/server/pki`, else a first-use fetch of `/v1/pki/ca` — refused for any host outside your private network. |
+| Which credential | `HOUDRY_FABRIC_KEY` if you exported one; a plane advertising `auth` without one stops the launch. |
+| Which models | `GET /v1/models` on that plane, listed now, so the model picker holds what the cluster can actually serve. |
+
+Pins live in `~/.houdry-dsh`: one `houdry-tofu-ca.json` record per origin, and one PEM per origin under `cas/`, because `NODE_EXTRA_CA_CERTS` names a single file that Node then trusts for every host.
+
+Nothing is launched until all four have answered. A plane you cannot reach, a CA that changed since you last pinned it, a plane asking for a token you did not export, and a catalog that refused to list each stop with exit 2 and a message naming the address and the file — rather than surfacing three messages later as a model error.
+
+### 4. Or configure the provider by hand
 
 1. Open Settings → Models
 2. Click "Add model provider"
@@ -64,25 +91,24 @@ The worker finds the control plane via WiFi discovery and stays running.
 6. Select models to enable
 7. Save
 
-### 4. Trust TLS certificate
-
-Since Houdry uses a self-signed CA:
+Then trust the plane's certificate authority before starting `dsh`, because an `openai-completions` route has no CA field and Node trusts only its bundled roots:
 
 ```bash
 export NODE_EXTRA_CA_CERTS="$HOME/.houdry/server/pki/root_ca.crt"
 npx @deepseek-ai/dsh web
 ```
 
-`dsh` has no per-provider CA field and trusts certificates only through the process environment, so this export is required rather than one of two options. A plane started with `serve --data DIR` keeps its CA at `DIR/pki/root_ca.crt`. See [Houdry fabric integration](../../integrations/houdry-fabric/INTEGRATION.md) for the launchers that set it.
+A plane started with `serve --data DIR` keeps its CA at `DIR/pki/root_ca.crt`. Whichever way you configure the provider, the same two facts hold: the address and the certificate are read when the profile loads, so a plane that moves needs `dsh` restarted, and the hand-written model list does not follow the cluster as nodes come and go.
 
 ## Usage
 
 ### Model selection
 
-- **`auto`**: Houdry's router analyzes your prompt and selects the best model + GPU node. Requires a node that can actually hold its pick — see the caveat below.
+- **`auto`**: Houdry's router analyzes your prompt and selects the best model and GPU node. Requires a node that can actually hold its pick — see the caveat below.
 - **Explicit model** (e.g., `qwen2.5-coder:1.5b`): Pins to that model; Houdry still picks the node
 
 The router considers:
+
 - Prompt modality (text, code, vision, documents)
 - Complexity (0-100 score)
 - Model capabilities (chat, code, reasoning, vision, tools)
@@ -127,6 +153,25 @@ curl --cacert "$HOME/.houdry/server/pki/root_ca.crt" \
   }'
 ```
 
+### Checking the plane through Node
+
+On Windows, `curl` fails on a private CA for a reason that has nothing to do with the fabric: schannel reports `CERT_TRUST_REVOCATION_STATUS_UNKNOWN` when it cannot reach a revocation list. Check the plane through the same certificate trust `dsh` uses, which is the assertion that matters:
+
+```powershell
+$env:NODE_EXTRA_CA_CERTS = "$env:USERPROFILE\.houdry\server\pki\root_ca.crt"
+node -e "fetch(process.env.HOUDRY_FABRIC_URL+'/models',{headers:{Authorization:'Bearer '+process.env.HOUDRY_FABRIC_KEY}}).then(r=>r.json()).then(j=>console.log(j.data.map(m=>m.id).join(', ')))"
+```
+
+### Checking the Web UI
+
+`/v1/models` is live inventory, so what the picker should offer depends on which nodes are registered at the moment you start. After launching through the integration:
+
+1. Open the model picker and choose the `houdry` provider.
+2. Check the list against `node integrations/houdry-fabric/resolve.mjs --json`, which prints the same ids the launcher exported.
+3. Send one message with `auto` and one with a pinned ref that fits your node, then confirm both in `houdry job list`.
+
+A model list of `auto` alone, when the plane lists worker refs, means the launcher did not reach `dsh` — usually `dsh` started before the export, or Settings wrote its own provider entry over the overlay. Both show up as `UNKNOWN_MODEL` in the session record.
+
 ## Troubleshooting
 
 ### Certificate errors
@@ -141,9 +186,12 @@ export NODE_EXTRA_CA_CERTS="$HOME/.houdry/server/pki/root_ca.crt"
 
 This has to be set before `dsh` launches; it is read at process start, and there is no per-provider certificate field to fall back on.
 
+If you launch through the integration scripts and the plane's CA was rebuilt — a new `serve --data` directory, a regenerated PKI — the launcher stops instead of trusting the new certificate, because a CA that changed without you saying so is what a man in the middle looks like. Confirm the plane is the one you expect, then re-pin with `--repin` on the command line or `HOUDRY_FABRIC_REPIN=1` in the environment. Only a plane that is not answering at all is treated as transient, and the existing pin is kept with a note.
+
 ### No models available
 
 **Check**:
+
 - Fabric is running: `curl --cacert ~/.houdry/server/pki/root_ca.crt https://127.0.0.1:8080/healthz`
 - GPU worker is registered: `houdry node list --server https://127.0.0.1:8080`
 - Models exist on worker: `houdry model list --server https://127.0.0.1:8080`
@@ -171,6 +219,10 @@ The model is in the catalog but not pulled on any worker:
 ollama pull tinyllama
 ```
 
+### The plane is reachable but never discovered
+
+`houdry serve` asks the system to allow inbound UDP `41808` and its TCP port. Run without elevation on Windows, it prints the `netsh` command it could not apply and continues to serve loopback only, so a LAN peer never hears the probe. A guest SSID that isolates clients blocks the same browse from the other side. `HOUDRY_FABRIC_URL` is the route in for a plane you can reach but not discover, and `--no-mdns` narrows the browse to UDP when a network drops multicast.
+
 ## Configuration Reference
 
 ### Provider fields
@@ -185,10 +237,22 @@ ollama pull tinyllama
 
 ### Environment variables
 
-```bash
-# Trust Houdry CA for Node.js
-export NODE_EXTRA_CA_CERTS="$HOME/.houdry/server/pki/root_ca.crt"
+Read by `resolve.mjs` and exported for the `dsh` process. Both launchers read the same names.
 
+| Variable | Default | Use |
+|---|---|---|
+| `HOUDRY_FABRIC_URL` | *discovered* | Skips the LAN browse and uses this address. `HOUDRY_BASE_URL` is accepted as the older name. |
+| `HOUDRY_FABRIC_KEY` | `no-key-required` | The plane's `serve --token` value. The default is a placeholder, because pi-ai's client refuses a route that names no credential. |
+| `HOUDRY_FABRIC_CA` | *pinned on first use* | A CA file you obtained another way; it outranks the pin. |
+| `HOUDRY_FABRIC_TOFU_DIR` | `~/.houdry-dsh` | Where the per-origin pins live. |
+| `HOUDRY_FABRIC_REPIN` | *off* | `1`, `true`, `yes` or `on` re-pins the CA for this launch. |
+| `HOUDRY_FABRIC_INSECURE` | *off* | The same four values skip certificate verification. Local development only. |
+| `HOUDRY_FABRIC_MODELS` | *from the plane* | The model list the route serves; the launcher fills it from `GET /v1/models`. |
+| `DSH_CMD` | `dsh` | The command to launch, split with quotes honored, e.g. `pnpm dsh`. |
+
+Resolver flags: `--repin`, `--timeout <ms>`, `--no-mdns`, `--json`. Fabric-side variables such as `HOUDRY_OLLAMA` belong to `houdry serve`, not to this launcher:
+
+```bash
 # Override Ollama URL for fabric local fallback (advanced)
 export HOUDRY_OLLAMA="http://192.168.1.100:11434"
 ```
@@ -197,6 +261,7 @@ export HOUDRY_OLLAMA="http://192.168.1.100:11434"
 
 - **mTLS**: GPU workers use client certificates. The `/v1` API requires only server TLS.
 - **Token auth**: Pass `--token` to `houdry serve` for API key authentication. Add it to DeepSeek Harness "API Key" field.
+- **First contact**: The one CA fetch that has no pin to check against is unverified, so pinning is refused outside a private address range, and every later run re-checks the plane through the pinned CA.
 - **Network**: Keep fabric on a private network. Do not expose to public internet without additional auth.
 
 ## Links
@@ -205,6 +270,8 @@ export HOUDRY_OLLAMA="http://192.168.1.100:11434"
 - Fabric documentation: [docs/](https://github.com/houdry-genomex/houdry/tree/main/docs)
 - OpenAI-compatible API spec: [docs/OpenAI-compatible-API.md](https://github.com/houdry-genomex/houdry/blob/main/docs/OpenAI-compatible-API.md)
 - Houdry Agent (alternative Desktop client): https://github.com/houdry-genomex/houdry-agent
+- Integration and resolver: [INTEGRATION.md](../../integrations/houdry-fabric/INTEGRATION.md)
+- Every provider field: [Configure models](../user/guide/providers.md)
 
 ## Comparison: Houdry vs Local Ollama
 
@@ -214,17 +281,16 @@ export HOUDRY_OLLAMA="http://192.168.1.100:11434"
 | Routing | Manual model selection | Automatic routing (model=auto) |
 | GPU pooling | One machine's GPUs | All registered GPU machines |
 | Scheduling | None (one request at a time) | Queue + node selection |
-| Discovery | localhost:11434 | WiFi mDNS + manual URL |
+| Discovery | localhost:11434 | LAN browse over UDP and mDNS, or a manual URL |
 | Security | No auth | mTLS (workers) + optional token (API) |
 
-Use local Ollama for single-machine development. Use Houdry when you have multiple GPU machines and want intelligent routing.
+Use local Ollama for single-machine development. Use Houdry when you have multiple GPU machines and want routing across them.
 
 ## Summary
 
 1. Install Houdry fabric: `houdry serve`
 2. Register GPU workers: `houdry gpu register`
-3. Add Houdry as custom OpenAI provider in DeepSeek Harness settings
-4. Trust the CA certificate
-5. Chat with `model=auto` for intelligent routing
+3. Start Harness with `sh integrations/houdry-fabric/start.sh`, or add Houdry as a custom OpenAI provider in Settings and export `NODE_EXTRA_CA_CERTS`
+4. Send a message with `model=auto`, or pin a ref that fits your node
 
-The integration uses Houdry's standard OpenAI-compatible `/v1` API — no custom code needed.
+The integration uses Houdry's standard OpenAI-compatible `/v1` API — no harness code change.

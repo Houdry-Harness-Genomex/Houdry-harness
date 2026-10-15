@@ -18,5 +18,7 @@
         # pi-ai defaults (262,144 / 32,768) over-promise a small local model.
         defaultContextWindow: 8192
         defaultMaxTokens: 2048
-        models:
-          - id: auto
+        # The launcher lists the plane's catalog before dsh starts, so the model
+        # menu holds what this cluster can serve now — the same inventory the
+        # Agent's endpoint probe returns. With no launcher, `auto` still routes.
+        models: !!js (process.env.HOUDRY_FABRIC_MODELS || 'auto').split(',').map(s => s.trim()).filter(Boolean).map(id => ({ id }))

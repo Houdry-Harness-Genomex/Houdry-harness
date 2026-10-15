@@ -1,25 +1,63 @@
 # Boot dsh's web profile against a Houdry fabric control plane.
+#
+# Resolution is a Node step because the connection rules live there: the UDP and
+# mDNS browse, the pinned certificate authority, the credential, and the catalog
+# the plane is serving right now. Its reply is tab-delimited and assigned
+# literally — never invoked, because a value that came from anywhere on the LAN
+# must not be able to inject a command into this launcher.
 $ErrorActionPreference = 'Stop'
 
-# A plane started with `serve --data DIR` keeps its CA under DIR\pki, so the CA
-# path is settable; the default is the plane's own state directory.
-$ca = if ($env:HOUDRY_FABRIC_CA) { $env:HOUDRY_FABRIC_CA } `
-    else { Join-Path $(if ($env:HOUDRY_HOME) { $env:HOUDRY_HOME } else { Join-Path $HOME '.houdry' }) 'server\pki\root_ca.crt' }
-if (-not (Test-Path -LiteralPath $ca)) {
-    Write-Error "start: no fabric root CA at $ca. Run 'houdry serve' once to generate it, or set HOUDRY_FABRIC_CA."
-    exit 1
+$here = Split-Path -Parent $MyInvocation.MyCommand.Path
+$overlay = Join-Path $here 'houdry-fabric.overlay.yml'
+
+# Diagnostics go to stderr; a non-zero exit means there is no plane to start
+# against, and starting one anyway would turn that into a model error later.
+$resolved = @(& node (Join-Path $here 'resolve.mjs'))
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+$url = ''
+$ca = ''
+$key = ''
+$models = ''
+$launch = @()
+
+foreach ($line in $resolved) {
+    $parts = "$line" -split "`t", 2
+    if ($parts.Count -lt 2) { continue }
+    switch ($parts[0]) {
+        'URL' { $url = $parts[1] }
+        'CA' { $ca = $parts[1] }
+        'KEY' { $key = $parts[1] }
+        'MODELS' { $models = $parts[1] }
+        # One ARG line per word of the dsh command line, already split with the
+        # same rules as start.sh. Slicing $env:DSH_CMD on spaces here is what
+        # produced the duplicated-word bug this replaces.
+        'ARG' { $launch += $parts[1] }
+    }
 }
 
-$overlay = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'houdry-fabric.overlay.yml'
+if (-not $url) {
+    Write-Error 'start: resolver returned no control-plane address.'
+    exit 2
+}
 
-# Node trusts only its bundled roots, so the fabric's private CA is added here.
-$env:NODE_EXTRA_CA_CERTS = $ca
-# The plane's listen port is a deployment choice; 8080 is often taken on Windows.
-if (-not $env:HOUDRY_FABRIC_URL) { $env:HOUDRY_FABRIC_URL = 'https://127.0.0.1:8080/v1' }
-# The fabric demands no credential unless 'serve --token' was used; a placeholder
-# keeps pi-ai's OpenAI client from refusing a keyless route.
-if (-not $env:HOUDRY_FABRIC_KEY) { $env:HOUDRY_FABRIC_KEY = 'houdry' }
+if ($launch.Count -eq 0) { $launch = @('dsh') }
 
-# DSH_CMD carries the launcher, so a source checkout runs 'pnpm dsh'.
-if ($env:DSH_CMD) { $cmd = $env:DSH_CMD -split ' ' } else { $cmd = @('dsh') }
-& $cmd[0] $cmd[1..($cmd.Count-1)] web --patch $overlay @args
+# The route reads these when dsh boots, so they must be in the environment
+# before it starts. Node accepts one CA for the whole process, so the pinned PEM
+# is trusted by being NODE_EXTRA_CA_CERTS.
+$env:HOUDRY_FABRIC_URL = $url
+if ($models) { $env:HOUDRY_FABRIC_MODELS = $models }
+if ($ca) { $env:NODE_EXTRA_CA_CERTS = $ca }
+
+# A token the caller set is left alone; the resolver only offers the placeholder
+# that pi-ai's client needs when the plane asks for no credential.
+if ($key -and -not $env:HOUDRY_FABRIC_KEY) { $env:HOUDRY_FABRIC_KEY = $key }
+
+$argv = $launch + @('web', '--patch', $overlay) + @($args)
+$exe = $argv[0]
+$rest = @()
+if ($argv.Count -gt 1) { $rest = $argv[1..($argv.Count - 1)] }
+
+& $exe @rest
+exit $LASTEXITCODE
