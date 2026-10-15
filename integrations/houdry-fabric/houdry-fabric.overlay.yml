@@ -1,0 +1,22 @@
+- id: llm-pi-ai
+  config:
+    providers:
+      houdry:
+        displayName: Houdry Fabric
+        api: openai-completions
+        baseURL: https://127.0.0.1:8080/v1
+        apiKeyEnv: HOUDRY_FABRIC_KEY
+        compat:
+          # The fabric decodes only system/user/assistant turns on its local
+          # path, so a developer-role system prompt is dropped without an error.
+          supportsDeveloperRole: false
+          # The fabric request struct names max_tokens only; an OpenAI
+          # max_completion_tokens cap is ignored, leaving output uncapped.
+          maxTokensField: max_tokens
+        # GET /v1/models on the fabric reports ids with no capacities and its
+        # catalog stores none, so these size every model the route serves. The
+        # pi-ai defaults (262,144 / 32,768) over-promise a small local model.
+        defaultContextWindow: 8192
+        defaultMaxTokens: 2048
+        models:
+          - id: auto
