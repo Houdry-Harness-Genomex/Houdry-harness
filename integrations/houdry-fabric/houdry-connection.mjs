@@ -790,12 +790,6 @@ export async function connectFabric(opts = {}) {
     exportKey: credential.placeholder ? credential.key : '',
     placeholder: credential.placeholder,
     models,
-    notes,
-    config: {
-      HOUDRY_FABRIC_URL: plane.api,
-      HOUDRY_FABRIC_MODELS: models.join(','),
-      ...(trust.caFile ? { NODE_EXTRA_CA_CERTS: trust.caFile } : {}),
-      ...(credential.placeholder ? { HOUDRY_FABRIC_KEY: credential.key } : {})
-    }
+    notes
   }
 }

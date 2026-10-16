@@ -21,11 +21,11 @@
   en: 369cc7e0df575c4a
   zh: 8f6cc89531ff00c2
 /houdry-fabric-provider/setup/3-start-deepseek-harness-against-the-fabric:
-  en: 23a9151f441ed369
-  zh: 1a5bd28a15bd058f
+  en: ad559d933d35a9c1
+  zh: 363bcd61df966b99
 /houdry-fabric-provider/setup/4-or-configure-the-provider-by-hand:
-  en: 77f74c0c53f35d01
-  zh: 00b9ebdee968dbbd
+  en: 235aa197bfa16667
+  zh: 9eeac8d4996c402b
 /houdry-fabric-provider/usage:
   en: 63bfd61a0561b255
   zh: 23816953c89cecf5
@@ -45,8 +45,8 @@
   en: be4db92f0ad0e544
   zh: a67ad16b607fc5f6
 /houdry-fabric-provider/verification/checking-the-web-ui:
-  en: 0d74655d7a5fa9f2
-  zh: b580086f02c0f1d8
+  en: 038279d872b01454
+  zh: 5cc3b1e7a7c4dc35
 /houdry-fabric-provider/troubleshooting:
   en: 659a188b36f9c326
   zh: 73b45885ed92f2ea
@@ -75,11 +75,11 @@
   en: e86de6f1ca3b4761
   zh: d965fbda71ab2a01
 /houdry-fabric-provider/configuration-reference/environment-variables:
-  en: f2d77f3ee5f876d4
-  zh: 9761319419d31142
+  en: e926a462cb8de8f2
+  zh: 9d7eb3653d282fbc
 /houdry-fabric-provider/security:
-  en: 2477e7553f195a1f
-  zh: 2cd19a42511cfed6
+  en: 938d87479377b2e7
+  zh: ce1c94b438dc8fce
 /houdry-fabric-provider/links:
   en: 3991ee25f2715589
   zh: d82ec0ef1a94d718

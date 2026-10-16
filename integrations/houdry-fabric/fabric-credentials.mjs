@@ -22,7 +22,7 @@ import path from 'node:path'
 
 import { fabricTofuDir, hasUsableSecret, PLACEHOLDER_FABRIC_KEY } from './houdry-connection.mjs'
 
-/** The reference the overlay's `apiKeyEnv` reads, so one stored value serves both. */
+/** The reference the houdry route's `apiKeyEnv` reads, so one stored value serves both. */
 export const FABRIC_KEY_REF = 'HOUDRY_FABRIC_KEY'
 
 /** Non-secret: which plane to reconnect to, and the CA file the operator chose. */

@@ -54,7 +54,7 @@ worker 会通过局域网找到控制面，并持续运行。
 
 ### 3. 让 DeepSeek Harness 连接 fabric 启动
 
-本仓库的 [Houdry fabric 集成](../../integrations/houdry-fabric/INTEGRATION.md)是最短路径：一条命令解析出控制面、它的证书、凭据和模型列表，然后带着提供方路由启动 Web UI。
+本仓库的 [Houdry fabric 集成](../../integrations/houdry-fabric/INTEGRATION.md)会解析控制面、它的证书、凭据和实时目录，把提供方写入 Web profile 的受监视补丁文档，再以会话监视器启动 Web UI。
 
 ```sh
 sh integrations/houdry-fabric/start.sh                # POSIX shells
@@ -75,7 +75,7 @@ pwsh integrations/houdry-fabric/start.ps1             # Windows
 
 固定结果保存在 `~/.houdry-dsh`：每个 origin 一条 `houdry-tofu-ca.json` 记录，`cas/` 下每个 origin 一份 PEM，因为 `NODE_EXTRA_CA_CERTS` 只能指定一个文件，而 Node 会把它用于所有主机。
 
-这四项都有答案之前不会启动任何东西。无法联系的控制面、上次固定之后变更过的 CA、索要未导出令牌的控制面、拒绝列出模型的目录，每一种都会以退出码 2 停止，并给出写明地址与文件名的消息——而不是在三条消息之后表现为一次模型错误。
+这四项都有答案之前不会启动任何东西。无法联系的控制面、上次固定之后变更过的 CA、索要未导出令牌的控制面、拒绝列出模型的目录，每一种都会以退出码 2 停止，并给出写明地址与文件名的消息——而不是后来表现为一次模型错误。
 
 控制面认下令牌的那次启动会把它留下来。地址记在信任目录里的 `fabric-connection.json`，紧挨着固定结果；令牌写进 `$DSH_HOME/.credentials.yaml`，也就是 `dsh` 读取所有提供方密钥的那份文档——与**设置 → 模型**写入的是同一份。于是空环境重启也能连回那个控制面，密钥仍由 `dsh` 自己解析，令牌不会经启动脚本再传出去。对导出它的那次运行而言，导出的值始终高于保存的值；`--no-save` 让一次启动什么都不记。`dsh headless` 完全不读这份文档，原因见排障一节。
 
@@ -100,7 +100,7 @@ export NODE_EXTRA_CA_CERTS="$HOME/.houdry/server/pki/root_ca.crt"
 npx @deepseek-ai/dsh web
 ```
 
-用 `serve --data DIR` 启动的控制面把 CA 保存在 `DIR/pki/root_ca.crt`。无论用哪种方式配置提供方，都有同样的两点：地址与证书在 profile 加载时读取，所以控制面迁移后必须重启 `dsh`；手工写入的模型列表不会随节点上下线而跟随集群变化。
+用 `serve --data DIR` 启动的控制面把 CA 保存在 `DIR/pki/root_ca.crt`。手工配置的提供方不会被此集成监视，因此地址和模型列表会保持保存时的状态。集成管理的路由会在 Web UI 中刷新模型变化；CA 变更仍需要重启 `dsh`，因为 Node 在进程启动时读取 `NODE_EXTRA_CA_CERTS`。
 
 在那一页保存的密钥写入 `$DSH_HOME/.credentials.yaml`，用的键名是路由指定的引用。fabric 路由指定 `HOUDRY_FABRIC_KEY`，所以通过集成脚本启动时读到的就是你在页面上输入的那一份，不必再要一次。
 
@@ -168,13 +168,14 @@ node -e "fetch(process.env.HOUDRY_FABRIC_URL+'/models',{headers:{Authorization:'
 
 ### 检查 Web UI
 
-`/v1/models` 是实时清单，因此模型选择器应当提供什么，取决于你启动的那一刻注册了哪些节点。通过集成启动之后：
+`/v1/models` 是实时清单。通过集成启动之后：
 
 1. 打开模型选择器，选择 `houdry` 提供商。
-2. 把列表与 `node integrations/houdry-fabric/resolve.mjs --json` 对照，后者打印的就是启动脚本导出的同一批 id。
-3. 先用 `auto` 发一条消息，再用一个装得下你节点的固定模型发一条，然后在 `houdry job list` 里确认这两次。
+2. 把列表与 `node integrations/houdry-fabric/resolve.mjs --json` 对照，后者打印最初写入受监视 profile 路由的 id。
+3. 添加或移除一个已服务的模型，最多等待 15 秒，确认模型选择器在不重启 Web UI 的情况下刷新。
+4. 先用 `auto` 发一条消息，再用一个装得下你节点的固定模型发一条，然后在 `houdry job list` 里确认这两次。
 
-如果控制面列出了 worker 模型而模型选择器只有 `auto`，说明启动脚本没有作用到 `dsh`——通常是 `dsh` 先于这些导出启动，或者设置页写入的提供商条目覆盖了 `--patch` 配置。两种情况都会以会话记录里的 `UNKNOWN_MODEL` 显现出来。
+监视器会保留由用户管理的 `!!js` Houdry 地址，并停止而不是替换它。手工路由或变更过的 CA 需要合适的显式配置或重启 `dsh`。
 
 ## 故障排查
 
@@ -249,7 +250,7 @@ ollama pull tinyllama
 
 ### 环境变量
 
-由 `resolve.mjs` 读取，并导出给 `dsh` 进程。两个启动脚本读取的名字完全相同。
+由 `resolve.mjs` 与其会话监视器读取。启动脚本会把 CA 以及无密钥控制面所需的占位符密钥传给 `dsh`；它们不会导出已解析的 Fabric URL 或模型目录。
 
 | 变量 | 默认值 | 用途 |
 |---|---|---|
@@ -260,7 +261,6 @@ ollama pull tinyllama
 | `HOUDRY_FABRIC_REPIN` | *关闭* | `1`、`true`、`yes` 或 `on` 会为本次启动重新固定 CA。 |
 | `HOUDRY_FABRIC_NO_SAVE` | *关闭* | 同样这四个值让本次启动不记录控制面，也不记录它的令牌。 |
 | `HOUDRY_FABRIC_INSECURE` | *关闭* | 同样这四个值会跳过证书校验。仅用于本地开发。 |
-| `HOUDRY_FABRIC_MODELS` | *来自控制面* | 这条路由提供的模型列表；启动脚本用 `GET /v1/models` 填充它。 |
 | `DSH_CMD` | `dsh` | 要启动的命令，按引号切分，例如 `pnpm dsh`。 |
 
 解析器的开关：`--repin`、`--no-save`、`--timeout <ms>`、`--no-mdns`、`--json`。`HOUDRY_OLLAMA` 这类 fabric 侧变量属于 `houdry serve`，不属于这个启动脚本：
@@ -274,7 +274,7 @@ export HOUDRY_OLLAMA="http://192.168.1.100:11434"
 
 - **mTLS**：GPU worker 使用客户端证书。`/v1` API 只要求服务端 TLS。
 - **令牌认证**：给 `houdry serve` 传入 `--token` 即可启用 API 密钥认证。把它填进 DeepSeek Harness 的「API 密钥」，或者只导出一次、由控制面认下的那次启动替你存下。无论哪种，保存的位置都是 `$DSH_HOME/.credentials.yaml`：在 0700 目录下以 0600 写入，写入时持有文件锁，内容是可直接还原的明文——以你的用户身份运行的进程能读到它，也没有接入任何系统钥匙串；在 Windows 上保护它的是你账户的所有权，而不是权限位。它从不写入信任目录，从不出现在启动脚本的标准输出上，也从不放进被启动进程的命令行。
-- **首次联系**：唯一一次没有既有固定可对照的 CA 抓取是不验证的，因此私有地址段之外一律拒绝固定，而之后每次运行都会通过已固定的 CA 复核控制面。
+- **首次联系**：唯一一次没有既有固定可对照的 CA 抓取是不验证的，因此私有或回环地址范围之外一律拒绝固定，而之后每次运行都会通过已固定的 CA 复核控制面。
 - **网络**：把 fabric 留在私有网络里。没有额外认证就不要暴露到公网。
 
 ## 链接

@@ -14,6 +14,10 @@
 // What authenticated is then stored, so the next launch reconnects without a
 // re-export: the token in `$DSH_HOME/.credentials.yaml` through the same
 // serializer the running product uses, the plane address beside the pinned CAs.
+// The resolved route is also written to the profile's patch document — the one
+// configuration file the running server watches — which is why the launcher
+// carries no `--patch` overlay of its own and why the models on screen can
+// change while dsh runs.
 //
 // stdout is machine-readable and tab-delimited so the launcher reads it
 // literally — a value that came from anywhere on the LAN is never parsed by a
@@ -28,6 +32,7 @@ import process from 'node:process'
 import { classifyLoopbackPort, connectFabric } from './houdry-connection.mjs'
 import { credentialUse, saveFabricSettings, savedFabricSettings } from './fabric-credentials.mjs'
 import { HOUDRY_PORTS } from './houdry-tls.mjs'
+import { resolveFabricProfilePatchPath, writeFabricRoute } from './houdry-fabric-patch.mjs'
 import { dshLaunchCommand } from './dsh-command.mjs'
 
 const USAGE = [
@@ -39,6 +44,8 @@ const USAGE = [
   '',
   'A plane that authenticated is stored so the next launch reconnects to it.',
   'The token goes to the credential document; it never appears in this output.',
+  'The route is also written to the profile patch document the running server',
+  'watches, which is where the live model list comes from.',
   ''
 ].join('\n')
 
@@ -179,6 +186,39 @@ if (options.save) {
       note(message)
     }
   }
+}
+
+// The route lands where the running server watches, so dsh boots with the model
+// picker already filled and the watcher can keep the document current. A route
+// the document manages through a !!js expression is the operator's, and is
+// left exactly as written; any other failure to record the route is a launch
+// that would start serving nothing, which gets the same refusal as no plane.
+let routeWrite
+let routePath
+
+try {
+  routePath = await resolveFabricProfilePatchPath(process.env)
+
+  routeWrite = await writeFabricRoute({
+    patchPath: routePath,
+    url: connected.api,
+    models: connected.models,
+    displayName: connected.plane?.name ?? ''
+  })
+} catch (cause) {
+  process.stderr.write(`houdry: ${cause.message}\n`)
+  process.exit(2)
+}
+
+if (!routeWrite.ok) {
+  if (routeWrite.reason === 'managed') {
+    note(`${routeWrite.error}; leaving the route as the document has it`)
+  } else {
+    process.stderr.write(`houdry: ${routeWrite.error}\n`)
+    process.exit(2)
+  }
+} else if (routeWrite.changed) {
+  note(`wrote the houdry route (${connected.api}) to ${routePath}`)
 }
 
 if (options.json) {

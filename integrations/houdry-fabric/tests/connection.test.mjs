@@ -685,12 +685,6 @@ describe('connectFabric', () => {
     assert.equal(out.caFile, fabricPinFile(dir, LAN))
     assert.deepEqual(out.models, ['qwen2.5-coder', 'llama-3.2'])
     assert.equal(out.exportKey, PLACEHOLDER_FABRIC_KEY)
-    assert.deepEqual(out.config, {
-      HOUDRY_FABRIC_URL: 'https://192.168.1.20:18080/v1',
-      HOUDRY_FABRIC_MODELS: 'qwen2.5-coder,llama-3.2',
-      NODE_EXTRA_CA_CERTS: fabricPinFile(dir, LAN),
-      HOUDRY_FABRIC_KEY: PLACEHOLDER_FABRIC_KEY
-    })
   })
 
   it('exports the placeholder for a keyless plane but never a real token', async () => {
@@ -698,14 +692,12 @@ describe('connectFabric', () => {
 
     assert.equal(keyless.placeholder, true)
     assert.equal(keyless.exportKey, PLACEHOLDER_FABRIC_KEY)
-    assert.equal(keyless.config.HOUDRY_FABRIC_KEY, PLACEHOLDER_FABRIC_KEY)
 
     const { args } = connected()
     const tokened = await connectFabric({ ...args, env: { ...args.env, HOUDRY_FABRIC_KEY: '0011223344556677' } })
 
     assert.equal(tokened.placeholder, false)
     assert.equal(tokened.exportKey, '')
-    assert.equal('HOUDRY_FABRIC_KEY' in tokened.config, false)
   })
 
   it('starts a router that lists nothing by asking it for auto', async () => {
@@ -720,7 +712,6 @@ describe('connectFabric', () => {
     })
 
     assert.deepEqual(out.models, [FABRIC_MODEL_AUTO])
-    assert.equal(out.config.HOUDRY_FABRIC_MODELS, FABRIC_MODEL_AUTO)
     assert.match(out.notes.join(' '), /listed no models/)
   })
 

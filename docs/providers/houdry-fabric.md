@@ -54,7 +54,7 @@ The worker finds the control plane over the LAN and stays running.
 
 ### 3. Start DeepSeek Harness against the fabric
 
-The [Houdry fabric integration](../../integrations/houdry-fabric/INTEGRATION.md) in this repository is the short path: one command resolves the plane, its certificate, its credential and its model list, then starts the Web UI with the provider route applied.
+The [Houdry fabric integration](../../integrations/houdry-fabric/INTEGRATION.md) in this repository resolves the plane, its certificate, credential and live catalog, writes the provider into the Web profile's watched patch document, then starts the Web UI with a session watcher.
 
 ```sh
 sh integrations/houdry-fabric/start.sh                # POSIX shells
@@ -75,7 +75,7 @@ The launcher runs `node integrations/houdry-fabric/resolve.mjs` first. That reso
 
 Pins live in `~/.houdry-dsh`: one `houdry-tofu-ca.json` record per origin, and one PEM per origin under `cas/`, because `NODE_EXTRA_CA_CERTS` names a single file that Node then trusts for every host.
 
-Nothing is launched until all four have answered. A plane you cannot reach, a CA that changed since you last pinned it, a plane asking for a token you did not export, and a catalog that refused to list each stop with exit 2 and a message naming the address and the file — rather than surfacing three messages later as a model error.
+Nothing is launched until all four have answered. A plane you cannot reach, a CA that changed since you last pinned it, a plane asking for a token you did not export, and a catalog that refuses to list each stop with exit 2 and a message naming the address and the file — rather than surfacing later as a model error.
 
 Export the token once and the launch that the plane authenticates keeps it. The address goes beside the pins, in `fabric-connection.json` inside the trust directory; the token goes into `$DSH_HOME/.credentials.yaml`, the document `dsh` reads every provider key from — the same one **Settings → Models** writes. A restart with an empty environment then reconnects to that plane and resolves the key again inside `dsh`, so the token is never carried back out through the launcher. An exported value always outranks the stored one for the run that exports it, and `--no-save` keeps a launch from remembering anything. `dsh headless` does not read that document at all — Troubleshooting says why.
 
@@ -100,7 +100,7 @@ export NODE_EXTRA_CA_CERTS="$HOME/.houdry/server/pki/root_ca.crt"
 npx @deepseek-ai/dsh web
 ```
 
-A plane started with `serve --data DIR` keeps its CA at `DIR/pki/root_ca.crt`. Whichever way you configure the provider, the same two facts hold: the address and the certificate are read when the profile loads, so a plane that moves needs `dsh` restarted, and the hand-written model list does not follow the cluster as nodes come and go.
+A plane started with `serve --data DIR` keeps its CA at `DIR/pki/root_ca.crt`. A manually configured provider is not watched by the integration, so its address and model list stay as saved. The integration-managed route refreshes model changes in the Web UI; a CA change still needs `dsh` restarted because Node reads `NODE_EXTRA_CA_CERTS` at process start.
 
 A key saved on that page is written to `$DSH_HOME/.credentials.yaml` under the reference the route names. The fabric route names `HOUDRY_FABRIC_KEY`, so a launch through the integration scripts reads the copy you typed there instead of asking for it again.
 
@@ -168,13 +168,14 @@ node -e "fetch(process.env.HOUDRY_FABRIC_URL+'/models',{headers:{Authorization:'
 
 ### Checking the Web UI
 
-`/v1/models` is live inventory, so what the picker should offer depends on which nodes are registered at the moment you start. After launching through the integration:
+`/v1/models` is live inventory. After launching through the integration:
 
 1. Open the model picker and choose the `houdry` provider.
-2. Check the list against `node integrations/houdry-fabric/resolve.mjs --json`, which prints the same ids the launcher exported.
-3. Send one message with `auto` and one with a pinned ref that fits your node, then confirm both in `houdry job list`.
+2. Check the list against `node integrations/houdry-fabric/resolve.mjs --json`, which prints the ids initially written to the watched profile route.
+3. Add or remove a served model, wait up to 15 seconds, and confirm that the picker refreshes without restarting the Web UI.
+4. Send one message with `auto` and one with a pinned ref that fits your node, then confirm both in `houdry job list`.
 
-A model list of `auto` alone, when the plane lists worker refs, means the launcher did not reach `dsh` — usually `dsh` started before the export, or Settings wrote its own provider entry over the overlay. Both show up as `UNKNOWN_MODEL` in the session record.
+The watcher preserves a user-managed `!!js` Houdry address and stops instead of replacing it. A manual route or a changed CA needs an appropriate explicit configuration or a `dsh` restart.
 
 ## Troubleshooting
 
@@ -249,7 +250,7 @@ When the message names the **stored** token instead, the plane did answer and re
 
 ### Environment variables
 
-Read by `resolve.mjs` and exported for the `dsh` process. Both launchers read the same names.
+Read by `resolve.mjs` and its session watcher. The launchers pass the CA and, for a keyless plane, the placeholder key to `dsh`; they do not export the resolved Fabric URL or model catalog.
 
 | Variable | Default | Use |
 |---|---|---|
@@ -260,7 +261,6 @@ Read by `resolve.mjs` and exported for the `dsh` process. Both launchers read th
 | `HOUDRY_FABRIC_REPIN` | *off* | `1`, `true`, `yes` or `on` re-pins the CA for this launch. |
 | `HOUDRY_FABRIC_NO_SAVE` | *off* | The same four values keep this launch from recording the plane or its token. |
 | `HOUDRY_FABRIC_INSECURE` | *off* | The same four values skip certificate verification. Local development only. |
-| `HOUDRY_FABRIC_MODELS` | *from the plane* | The model list the route serves; the launcher fills it from `GET /v1/models`. |
 | `DSH_CMD` | `dsh` | The command to launch, split with quotes honored, e.g. `pnpm dsh`. |
 
 Resolver flags: `--repin`, `--no-save`, `--timeout <ms>`, `--no-mdns`, `--json`. Fabric-side variables such as `HOUDRY_OLLAMA` belong to `houdry serve`, not to this launcher:
@@ -274,7 +274,7 @@ export HOUDRY_OLLAMA="http://192.168.1.100:11434"
 
 - **mTLS**: GPU workers use client certificates. The `/v1` API requires only server TLS.
 - **Token auth**: Pass `--token` to `houdry serve` for API key authentication. Add it to DeepSeek Harness "API Key" field, or export it once and the launch the plane authenticates stores it. Either way the copy is `$DSH_HOME/.credentials.yaml`, written under a lock at mode 0600 in a 0700 directory and kept as recoverable plaintext: a process running as your user can read it, no OS keychain is wired in, and on Windows the protection comes from your account's ownership rather than a mode bit. It is never written to the trust directory, never printed on the launcher's stdout, and never passed in the launched process's command line.
-- **First contact**: The one CA fetch that has no pin to check against is unverified, so pinning is refused outside a private address range, and every later run re-checks the plane through the pinned CA.
+- **First contact**: The one CA fetch that has no pin to check against is unverified, so pinning is refused outside a private or loopback address range, and every later run re-checks the plane through the pinned CA.
 - **Network**: Keep fabric on a private network. Do not expose to public internet without additional auth.
 
 ## Links

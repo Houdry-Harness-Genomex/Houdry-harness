@@ -92,7 +92,7 @@ export function trustLocalHoudryCA(home = houdryHome(), env = process.env) {
   return dest
 }
 
-function isPrivateOrLoopback(host) {
+export function isPrivateOrLoopback(host) {
   const h = host.toLowerCase()
 
   if (h === '127.0.0.1' || h === 'localhost' || h === '::1' || h === '[::1]') {
