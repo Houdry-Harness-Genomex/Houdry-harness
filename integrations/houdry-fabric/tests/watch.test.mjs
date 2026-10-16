@@ -19,6 +19,7 @@ import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { describe, it } from 'node:test'
 
+import { fabricPinFile } from '../houdry-connection.mjs'
 import { readFabricRoute } from '../houdry-fabric-patch.mjs'
 import { SIMULATOR_LEAF, SIMULATOR_LEAF_KEY, SIMULATOR_ROOT } from './fixtures.mjs'
 
@@ -144,6 +145,7 @@ describe('the watcher against a plane on this machine', () => {
       baseURL: `${plane.url}/v1`,
       models: ['m1', 'm2'],
       displayName: 'Houdry Fabric',
+      caFile: fabricPinFile(box.tofu, plane.url),
       configurable: true
     })
 
@@ -183,6 +185,7 @@ describe('the watcher against a plane on this machine', () => {
       baseURL: `${adopted.url}/v1`,
       models: ['m2'],
       displayName: 'Studio GPU',
+      caFile: fabricPinFile(box.tofu, adopted.url),
       configurable: true
     })
   })

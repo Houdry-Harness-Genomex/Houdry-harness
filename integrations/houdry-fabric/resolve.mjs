@@ -203,7 +203,8 @@ try {
     patchPath: routePath,
     url: connected.api,
     models: connected.models,
-    displayName: connected.plane?.name ?? ''
+    displayName: connected.plane?.name ?? '',
+    caFile: connected.caFile ?? ''
   })
 } catch (cause) {
   process.stderr.write(`houdry: ${cause.message}\n`)

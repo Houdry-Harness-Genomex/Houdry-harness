@@ -488,29 +488,28 @@ describe('ui-model-selection dual entry', () => {
     expect(face2.directory).not.toBe(face1.directory)
   })
 
-  it('Refresh Models button triggers load and is disabled while busy', async () => {
+  it('refresh forces a Host reload even though a settled load short-circuits', async () => {
     const b = await bench()
     try {
       b.mint('s1')
       const face = b.seat().inject!(sid('s1'))
       face.load()
-
-      // Verify initial state
-      expect(b.calls.models).toBe(1)
-      const initialSnapshot = face.directory.getSnapshot()
-      expect(initialSnapshot.status).toBe('ready')
-
-      // Call load() manually to simulate Refresh Models button click
-      face.load()
-      expect(b.calls.models).toBe(2)
-
-      // Verify status becomes loading
-      expect(face.directory.getSnapshot().status).toBe('loading')
-
-      // Wait for load to complete
       await vi.waitFor(() => {
-        expect(face.directory.getSnapshot().status).toBe('ready')
+        expect(b.calls.models).toBe(1)
+        expect(face.directory.getSnapshot()).toMatchObject({ status: 'ready', groups: GROUPS })
       })
+      // The Refresh Models control must bypass the catalog's ready
+      // short-circuit: this settled load answers from cache without a query.
+      face.load()
+      await vi.waitFor(() => {
+        expect(face.directory.getSnapshot()).toMatchObject({ status: 'ready', groups: GROUPS })
+      })
+      expect(b.calls.models).toBe(1)
+      face.refresh()
+      await vi.waitFor(() => {
+        expect(face.directory.getSnapshot()).toMatchObject({ status: 'ready', groups: GROUPS })
+      })
+      expect(b.calls.models).toBe(2)
     } finally {
       await b.ctx.fiber.dispose()
     }

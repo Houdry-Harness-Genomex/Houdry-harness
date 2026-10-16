@@ -62,7 +62,7 @@ const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
  * @returns the trigger and, while open, the two-level menu.
  */
 export function ModelSelect(
-  { locked, available, directory, load, select, t }:
+  { locked, available, directory, load, refresh, select, t }:
   ModelSelectInjected & { locked: boolean } & PropsLocale<'model'>,
 ) {
   const state = useSyncExternalStore(
@@ -144,6 +144,14 @@ export function ModelSelect(
   const reload = (): void => {
     lastActionRef.current = 'load'
     load()
+  }
+
+  // The explicit refresh and the failure-row retry must bypass the catalog's
+  // ready short-circuit, or both re-render the stale groups without asking
+  // the Host again.
+  const refreshModels = (): void => {
+    lastActionRef.current = 'load'
+    refresh()
   }
 
   useEffect(() => {
@@ -547,7 +555,7 @@ export function ModelSelect(
               {state.failures.map(failure => (
                 <div className={css.warning} key={failure.id}>
                   <span>{t('warning.groupLoad', { name: failure.id === 'deepseek-account' ? t('provider.account') : failure.name, message: failure.message })}</span>
-                  <button type="button" className={css.retry} onClick={reload}>{t('retry')}</button>
+                  <button type="button" className={css.retry} onClick={refreshModels}>{t('retry')}</button>
                 </div>
               ))}
               <div
@@ -608,13 +616,13 @@ export function ModelSelect(
                 <button
                   type="button"
                   className={css.refreshButton}
-                  disabled={busy}
+                  disabled={busy || state.status === 'loading'}
                   onClick={(event) => {
                     event.preventDefault()
-                    reload()
+                    refreshModels()
                   }}
                 >
-                  {busy ? <StateDot state="ongoing" /> : <IconDataOutlineRegular />}
+                  {busy || state.status === 'loading' ? <StateDot state="ongoing" /> : <IconDataOutlineRegular />}
                   <span>{t('action.refresh')}</span>
                 </button>
               </div>

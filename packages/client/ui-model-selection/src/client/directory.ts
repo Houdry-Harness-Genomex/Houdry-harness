@@ -82,6 +82,16 @@ export class ModelDirectory {
   }
 
   /**
+   * Force a Host catalog reload even when the shared load already resolved —
+   * `load` short-circuits on the cached catalog, so an explicit user refresh
+   * must go through here. Failures surface on the shared store's error state.
+   */
+  refresh(): void {
+    this.assertAvailable()
+    this.catalog.refresh()
+  }
+
+  /**
    * Select the complete provider/model/reasoning selection. The durable
    * projection frame updates the shared current; failures surface on the store
    * and return with the operation so each entry can present its own failure.

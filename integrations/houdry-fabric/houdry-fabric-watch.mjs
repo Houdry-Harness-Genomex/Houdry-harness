@@ -364,7 +364,7 @@ async function tick() {
   lastFailure = ''
   failureRepeats = 0
 
-  const discovered_ = { api: result.api, models: result.models, displayName: result.plane?.name ?? '' }
+  const discovered_ = { api: result.api, models: result.models, displayName: result.plane?.name ?? '', caFile: result.caFile ?? '' }
   const decision = decideRouteCycle({ saved, discovered: discovered_, savedReachable: answered?.ok === true })
 
   if (decision.action === 'skip') {
@@ -380,7 +380,8 @@ async function tick() {
 
   if (decision.action === 'adopt') {
     const previous = saved?.baseURL ?? ''
-    const write = await writeFabricRoute({ patchPath, url: decision.api, models: decision.models, displayName: decision.displayName })
+    // The new plane's own pin: a saved CA from the previous address must not vouch for this one.
+    const write = await writeFabricRoute({ patchPath, url: decision.api, models: decision.models, displayName: decision.displayName, caFile: decision.caFile })
 
     if (!write.ok) {
       // The plane answers; the document is the problem, and the next tick tries again.
@@ -400,7 +401,9 @@ async function tick() {
         `now serving ${decision.api}` +
           (decision.displayName ? ` as "${decision.displayName}"` : '') +
           (moved ? ` — replaced the route at ${previous}${asked ? ', which did not answer this cycle' : ''}` : '') +
-          (moved ? ' — chat turns keep the certificate this dsh started with until it is restarted' : '')
+          // The caFile in the route only reaches a chat once the LLM plugin
+          // re-resolves the document, which the running dsh does on its own.
+          (moved ? ' — chat turns verify against the route CA the moment the plugin re-resolves' : '')
       )
 
       const savedSettings = await saveFabricSettings({ env: process.env, url: decision.api, ca: savedCa, key: '' })
@@ -415,8 +418,15 @@ async function tick() {
 
   if (decision.action === 'refresh') {
     // Same plane, new catalog: the address and whatever the operator renamed
-    // the route to are left exactly as the document has them.
-    const write = await writeFabricRoute({ patchPath, url: decision.api, models: decision.models, displayName: saved?.displayName ?? '' })
+    // the route to are left exactly as the document has them, and so is an
+    // operator's own caFile; the write carries it only when the document has none.
+    const write = await writeFabricRoute({
+      patchPath,
+      url: decision.api,
+      models: decision.models,
+      displayName: saved?.displayName ?? '',
+      caFile: saved?.caFile || decision.caFile || ''
+    })
 
     if (!write.ok) {
       note(`could not refresh the catalog: ${write.error}`)

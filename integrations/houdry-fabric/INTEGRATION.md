@@ -61,6 +61,7 @@ The route contains a concrete API address and catalog rather than `!!js` express
         displayName: Houdry Fabric
         api: openai-completions
         baseURL: https://192.168.1.20:18081/v1
+        caFile: /home/you/.houdry-dsh/cas/192.168.1.20_18081.crt
         apiKeyEnv: HOUDRY_FABRIC_KEY
         compat:
           supportsDeveloperRole: false
@@ -79,7 +80,7 @@ While a connection is healthy, the watcher rechecks it every 15 seconds. It rewr
 
 The watcher never overwrites a user-managed `!!js` Houdry `baseURL`, a non-Fabric route, malformed YAML, or unrelated profile entries. It edits the profile document with the same writer lock and atomic-write path as the Models page. A page save and watcher update therefore serialize, and comments, sibling plugins, sibling providers, and valid `!!js` values round-trip unchanged.
 
-Harness reloads this profile patch as it changes. The LLM adapter re-registers its provider and browser model catalogs refresh without a Harness Web UI restart. A newly adopted plane whose CA differs from the `NODE_EXTRA_CA_CERTS` value present at process start still needs a `dsh` restart before requests can trust that new CA.
+Harness reloads this profile patch as it changes. The LLM adapter re-registers its provider and browser model catalogs refresh without a Harness Web UI restart. The route's `caFile` is part of that document, so a newly adopted plane is trusted by chat requests as soon as the LLM plugin re-resolves — no `dsh` restart, and the model picker's **Refresh models** control re-reads the catalog on demand instead of waiting for the watcher interval.
 
 ## Resolution and trust
 
@@ -95,7 +96,7 @@ The resolver uses these decisions in order:
 
 A first-use CA fetch is limited to private or loopback addresses. Later requests verify through the pin; a changed CA is refused until `--repin` or `HOUDRY_FABRIC_REPIN=1` explicitly replaces it. `HOUDRY_FABRIC_INSECURE` is local-development-only and disables certificate validation for that run.
 
-`NODE_EXTRA_CA_CERTS` is set before `dsh` starts because the OpenAI provider has no per-route CA option. The launcher exports no Fabric URL or catalog to the Web process. It sets a placeholder `HOUDRY_FABRIC_KEY` only for a keyless plane; a real key is read by Harness through its credential service.
+The route records the CA the connection proved the plane by (`caFile`, the per-origin pin or operator CA path). The `llm-pi-ai` provider verifies every chat request for the route against that file — re-read per request, so a repinned certificate takes effect without a restart — instead of relying on `NODE_EXTRA_CA_CERTS`, which Node reads only at process start and which therefore cannot cover a plane adopted after boot. Verification is never relaxed: the CA adds trust for the route. The launcher exports no Fabric URL or catalog to the Web process. It sets a placeholder `HOUDRY_FABRIC_KEY` only for a keyless plane; a real key is read by Harness through its credential service.
 
 ## Persistence
 
@@ -130,14 +131,14 @@ node --test integrations/houdry-fabric/tests/watch.test.mjs
 pnpm run test:houdry-fabric
 ```
 
-The watcher suite runs a loopback HTTPS control plane with a test-only CA. It verifies secure TOFU adoption, catalog refresh into the watched patch, no write while a pinned plane is unreachable, preservation of manual routes, and one-watcher cleanup. The connection suite covers discovery, TOFU reuse and rotation, credential persistence, and resolver failure behavior.
+The watcher suite runs a loopback HTTPS control plane with a test-only CA. It verifies secure TOFU adoption, catalog refresh into the watched patch, no write while a pinned plane is unreachable, preservation of manual routes, and one-watcher cleanup. The connection suite covers discovery, TOFU reuse and rotation, credential persistence, and resolver failure behavior. The loopback recovery and watcher-lifecycle suites cover an endpoint change end to end (old plane gone, new plane adopted, route and catalog rewritten, TLS re-pinned) and the continuous loop's idle, parent-liveness, and shutdown behavior.
 
-For a live plane, open the Web UI model picker after launch, select `houdry`, and compare its models with `GET /v1/models`. Add or remove a model on the control plane and wait one watcher interval; the picker should refresh without restarting the Web UI. mDNS packet handling is covered by fixtures but has not been observed against a live advertising Fabric plane.
+For a live plane, open the Web UI model picker after launch, select `houdry`, and compare its models with `GET /v1/models`. Add or remove a model on the control plane and wait one watcher interval; the picker should refresh without restarting the Web UI. Two gated probes exist for a live plane that answers — `HOUDRY_FABRIC_LIVE=1 node integrations/houdry-fabric/tests/provider-chat.manual.mjs` (a real chat completion through the route's `caFile`) and `... chat-error-diagnostic.manual.mjs` (the raw TLS or connection error "Connection error." hides). mDNS packet handling is covered by fixtures but has not been observed against a live advertising Fabric plane.
 
 ## Limits
 
 - The watcher controls only the `houdry` provider in the Web profile; a user-managed `!!js` address deliberately stops automatic changes.
 - Multiple different discovered plane names are not selected automatically.
-- A Fabric CA transition after the Web process starts requires a Web restart because Node reads `NODE_EXTRA_CA_CERTS` at startup.
+- `HOUDRY_FABRIC_INSECURE` relaxes verification only for the launch's own connection checks; chat requests verify against the route's `caFile`, which that mode does not produce — a development plane must present a CA the route records.
 - `dsh headless` does not use the saved credential document; export `HOUDRY_FABRIC_KEY` for headless runs.
 - A queued `auto` request can wait indefinitely if no worker has enough free VRAM; choose a fitting explicit model when necessary.

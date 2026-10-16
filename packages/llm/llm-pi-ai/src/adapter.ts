@@ -58,6 +58,7 @@ import type {
 } from '@deepseek-ai/dsh-llm'
 import type { AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
+import { caFetchFor, transportFailureDetail } from './ca-fetch.ts'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { requestImageTarget, toPiContext } from './context.ts'
 import { conversationUpdates, createModels, getSupportedThinkingLevels } from './models.ts'
@@ -138,6 +139,10 @@ function profileOptions(
     ...profile.transport === undefined ? {} : { transport: profile.transport },
     ...profile.timeoutMs === undefined ? {} : { timeoutMs: profile.timeoutMs },
     ...profile.websocketConnectTimeoutMs === undefined ? {} : { websocketConnectTimeoutMs: profile.websocketConnectTimeoutMs },
+    // A route naming a CA file sends every request through a fetch verified
+    // against it, because the launch-time NODE_EXTRA_CA_CERTS cannot cover a
+    // route adopted after Node started.
+    ...profile.caFile === undefined ? {} : { fetch: caFetchFor(profile.caFile) },
     // The agent recovery layer owns visible attempts; one adapter call is one SDK attempt.
     maxRetries: 0,
   }
@@ -178,6 +183,25 @@ function resolveReasoningLevel(
     `pi-ai provider "${model.provider}" model "${model.id}" does not support reasoning effort "${effort}"`,
     'UNSUPPORTED_REASONING_EFFORT',
   )
+}
+
+/**
+ * The recorded transport-failure detail for one caFile route's endpoint, read
+ * at error time. The OpenAI SDK reports every connection failure as the
+ * generic "Connection error."; the ca-fetch wrapper records the real cause
+ * chain per origin so the stream can name it.
+ */
+function transportDetailFor(
+  profile: ResolvedPiAiProviderProfile,
+  model: Model<Api>,
+): () => string | undefined {
+  const base = profile.baseURL ?? model.baseUrl
+  try {
+    const origin = new URL(base).origin
+    return () => transportFailureDetail(origin)
+  } catch {
+    return () => undefined
+  }
 }
 
 /**
@@ -423,7 +447,13 @@ export class PiAiAdapter extends LlmAdapter {
         // Harness-owned and therefore win collisions.
         headers: requestHeaders(profile.headers),
       })
-      const iterator = toStreamChunks(events, model.contextWindow, options.signal, model.id)[Symbol.asyncIterator]()
+      const iterator = toStreamChunks(
+        events,
+        model.contextWindow,
+        options.signal,
+        model.id,
+        profile.caFile === undefined ? undefined : transportDetailFor(profile, model),
+      )[Symbol.asyncIterator]()
       let exhausted = false
       try {
         while (true) {

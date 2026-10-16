@@ -13,6 +13,7 @@
  */
 
 import { spawn, type ChildProcess } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -184,22 +185,6 @@ export const internals: {
  * @param config - validated {@link Config}.
  */
 export function apply(ctx: Context, config: Config): void {
-  // Load Fabric CA trust at boot for HTTPS requests to the control plane
-  let restoreFabricCATrust: (() => void) | null = null
-  try {
-    const require = createRequire(import.meta.url)
-    const integrationDir = join(dirname(require.resolve('@deepseek-ai/dsh-web-app/package.json')), '../../../integrations/houdry-fabric')
-    const caModule = require(join(integrationDir, 'houdry-ca-dispatcher.mjs'))
-    console.log('web-app: loading Fabric CA trust from', integrationDir)
-    // Load CA trust synchronously at boot; this works because NODE_EXTRA_CA_CERTS
-    // is read once at process startup for Node's TLS, but undici may reload it at runtime
-    restoreFabricCATrust = caModule.loadFabricCATrust?.() ?? null
-    console.log('web-app: Fabric CA trust loaded', restoreFabricCATrust ? 'successfully' : '(no-op)')
-  } catch (error) {
-    console.warn('web-app: failed to load Fabric CA trust:', error)
-    // Fabric integration may not be present or may fail to load; continue without it
-  }
-
   // The schema validates a present string; an explicit YAML `null` bypasses
   // the string transform and reaches here, meaning unset.
   const publicUrl = config.publicUrl ?? undefined
@@ -282,7 +267,7 @@ export function apply(ctx: Context, config: Config): void {
     const ready = readyCtx.appReady
     const profileContext = readyCtx.profileContext
     const subprocess = readyCtx.subprocess
-    if (ready === undefined || profileContext === undefined || subprocess === undefined) {
+    if (ready === undefined) {
       return
     }
     ready.onReady(() => {
@@ -290,7 +275,6 @@ export function apply(ctx: Context, config: Config): void {
         const require = createRequire(import.meta.url)
         const integrationDir = join(dirname(require.resolve('@deepseek-ai/dsh-web-app/package.json')), '../../../integrations/houdry-fabric')
         const watcherScript = join(integrationDir, 'houdry-fabric-watch.mjs')
-        const { existsSync } = require('node:fs')
         if (!existsSync(watcherScript)) {
           console.warn(`web-app: Houdry Fabric watcher script not found at ${watcherScript}; auto-discovery disabled`)
           return
@@ -302,13 +286,15 @@ export function apply(ctx: Context, config: Config): void {
           graceMs: 5000,
           env: { DSH_HOME: profileContext.home },
         })
+        // Attached now, not at teardown: a watcher that dies mid-session must
+        // report itself while the operator can still act on it.
         readyCtx.effect(() => {
-          return () => {
-            void handle.done.catch((error: unknown) => {
-              const message = error instanceof Error ? error.message : String(error)
-              console.warn(`web-app: Houdry Fabric watcher exited: ${message}`)
-            })
-          }
+          void handle.done.catch((error: unknown) => {
+            const message = error instanceof Error ? error.message : String(error)
+            console.warn(`web-app: Houdry Fabric watcher exited: ${message}`)
+          })
+          // Nothing to unwind; the subprocess service owns the watcher's lifetime.
+          return () => {}
         }, 'houdry-fabric-watcher-exit')
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
@@ -316,9 +302,4 @@ export function apply(ctx: Context, config: Config): void {
       }
     })
   })
-
-  // Restore original CA trust on plugin disposal
-  if (restoreFabricCATrust) {
-    ctx.effect(() => () => restoreFabricCATrust(), 'houdry-fabric-ca-trust')
-  }
 }

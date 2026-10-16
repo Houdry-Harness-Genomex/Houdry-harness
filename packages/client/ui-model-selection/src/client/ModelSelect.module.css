@@ -375,8 +375,3 @@
   width: 14px;
   height: 14px;
 }
-
-/* Ensure the footer is always visible and not clipped */
-.menu > .footer {
-  flex-shrink: 0;
-}

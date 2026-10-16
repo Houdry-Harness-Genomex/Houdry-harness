@@ -129,8 +129,31 @@ describe('reading the route the document serves', () => {
       baseURL: 'https://192.168.1.20:18081/v1',
       models: ['a', 'b'],
       displayName: 'Houdry Fabric',
+      caFile: '',
       configurable: true
     })
+  })
+
+  it('reads the CA pin the route carries, and none where there is none', async (t) => {
+    const box = sandbox(t)
+    const pin = path.join(box.tofu, 'planes', 'plane-ca.pem')
+
+    writeDocument(box, [
+      '- id: llm-pi-ai',
+      '  config:',
+      '    providers:',
+      '      houdry:',
+      `        baseURL: ${LAN}`,
+      `        caFile: ${pin}`,
+      '        models: []',
+      ''
+    ].join('\n'))
+
+    assert.equal(readFabricRoute(box.patchPath).caFile, pin)
+
+    writeDocument(box, DOCUMENT_WITH_NEIGHBORS)
+
+    assert.equal(readFabricRoute(box.patchPath).caFile, '')
   })
 
   it('reads a !!js baseURL as someone else\'s route, and a missing one as unfinished', async (t) => {
@@ -180,6 +203,7 @@ describe('writing the route', () => {
       baseURL: LAN,
       models: ['a', FABRIC_MODEL_AUTO],
       displayName: HOUDRY_ROUTE_DEFAULTS.defaultDisplayName,
+      caFile: '',
       configurable: true
     })
 
@@ -188,6 +212,30 @@ describe('writing the route', () => {
     assert.match(text, new RegExp(`- id: ${ROUTE_PLUGIN_ID}`))
     assert.match(text, /supportsDeveloperRole: false/)
     assert.match(text, /maxTokensField: max_tokens/)
+  })
+
+  it('carries the CA pin with the address, and removes the key when the pin is empty', async (t) => {
+    const box = sandbox(t)
+    const pin = path.join(box.tofu, 'planes', 'plane-ca.pem')
+
+    const pinned = await writeFabricRoute({ patchPath: box.patchPath, url: LAN, models: ['a'], caFile: pin })
+
+    assert.equal(pinned.ok, true)
+
+    const text = fs.readFileSync(box.patchPath, 'utf8')
+
+    // The pin belongs to the address it vouches for, so it lands beside baseURL.
+    assert.ok(text.indexOf('caFile:') > text.indexOf(`baseURL: ${LAN}`))
+    assert.equal(readFabricRoute(box.patchPath).caFile, pin)
+
+    // An empty pin is the absence of a CA, not a placeholder: the key is gone
+    // so the LLM plugin resolves no CA file for the route.
+    const cleared = await writeFabricRoute({ patchPath: box.patchPath, url: LAN, models: ['a'] })
+
+    assert.equal(cleared.ok, true)
+    assert.equal(cleared.changed, true)
+    assert.equal(readFabricRoute(box.patchPath).caFile, '')
+    assert.doesNotMatch(fs.readFileSync(box.patchPath, 'utf8'), /caFile/)
   })
 
   it('writes the same thing once and then never touches the file again', async (t) => {
@@ -233,6 +281,7 @@ describe('writing the route', () => {
       baseURL: OTHER_LAN,
       models: ['q'],
       displayName: HOUDRY_ROUTE_DEFAULTS.defaultDisplayName,
+      caFile: '',
       configurable: true
     })
   })
@@ -355,19 +404,23 @@ describe('what counts as this module\'s route', () => {
   })
 
   it('builds the provider entry the overlay used to carry', () => {
-    assert.deepEqual(
-      houdryProviderConfig({ url: LAN, models: ['a'], displayName: '' }),
-      {
-        displayName: HOUDRY_ROUTE_DEFAULTS.defaultDisplayName,
-        api: HOUDRY_ROUTE_DEFAULTS.api,
-        baseURL: LAN,
-        apiKeyEnv: HOUDRY_ROUTE_DEFAULTS.apiKeyEnv,
-        compat: { supportsDeveloperRole: false, maxTokensField: 'max_tokens' },
-        defaultContextWindow: 8192,
-        defaultMaxTokens: 2048,
-        models: [{ id: 'a' }]
-      }
-    )
+    const entry = {
+      displayName: HOUDRY_ROUTE_DEFAULTS.defaultDisplayName,
+      api: HOUDRY_ROUTE_DEFAULTS.api,
+      baseURL: LAN,
+      apiKeyEnv: HOUDRY_ROUTE_DEFAULTS.apiKeyEnv,
+      compat: { supportsDeveloperRole: false, maxTokensField: 'max_tokens' },
+      defaultContextWindow: 8192,
+      defaultMaxTokens: 2048,
+      models: [{ id: 'a' }]
+    }
+
+    assert.deepEqual(houdryProviderConfig({ url: LAN, models: ['a'], displayName: '' }), entry)
+
+    assert.deepEqual(houdryProviderConfig({ url: LAN, models: ['a'], displayName: '', caFile: '/etc/houdry/plane-ca.pem' }), {
+      ...entry,
+      caFile: '/etc/houdry/plane-ca.pem'
+    })
   })
 })
 
@@ -380,10 +433,31 @@ describe('one reconnect decision', () => {
       action: 'adopt',
       api: LAN,
       models: ['a', 'b'],
-      displayName: 'Houdry Fabric'
+      displayName: 'Houdry Fabric',
+      caFile: ''
     })
 
     assert.equal(decideRouteCycle({ saved, discovered: { ...found, api: OTHER_LAN } }).action, 'adopt')
+  })
+
+  it('adopts with the new plane\'s own pin, never the previous plane\'s', () => {
+    const pin = path.join('trust', 'plane-ca.pem')
+
+    // The discovered pin is what this cycle's connection proved the plane by,
+    // so an adopt carries it — even when the saved route still holds a pin
+    // from the address it is being moved away from.
+    const moved = decideRouteCycle({
+      saved: { ...saved, caFile: path.join('trust', 'old-plane-ca.pem') },
+      discovered: { ...found, api: OTHER_LAN, caFile: pin }
+    })
+
+    assert.equal(moved.action, 'adopt')
+    assert.equal(moved.caFile, pin)
+
+    const fresh = decideRouteCycle({ saved: null, discovered: { ...found, caFile: pin } })
+
+    assert.equal(fresh.action, 'adopt')
+    assert.equal(fresh.caFile, pin)
   })
 
   it('carries the name the operator gave the route across an adopt, and the plane name when the route has none', () => {
@@ -410,8 +484,18 @@ describe('one reconnect decision', () => {
   })
 
   it('refreshes a changed catalog and keeps an unchanged one', () => {
-    assert.equal(decideRouteCycle({ saved, discovered: { ...found, models: ['a', 'c'] } }).action, 'refresh')
+    const pin = path.join('trust', 'plane-ca.pem')
+
+    const refreshed = decideRouteCycle({ saved, discovered: { ...found, models: ['a', 'c'], caFile: pin } })
+
+    assert.equal(refreshed.action, 'refresh')
+    assert.equal(refreshed.caFile, pin)
+
     assert.equal(decideRouteCycle({ saved, discovered: found }).action, 'keep')
+
+    // A keep writes nothing, so it names no pin for anyone to write.
+    assert.equal('caFile' in decideRouteCycle({ saved, discovered: found }), false)
+    assert.equal('caFile' in decideRouteCycle({ saved, discovered: null, savedReachable: true }), false)
   })
 
   it('keeps a reachable non-loopback plane when nothing is discovered, and never a loopback one', () => {

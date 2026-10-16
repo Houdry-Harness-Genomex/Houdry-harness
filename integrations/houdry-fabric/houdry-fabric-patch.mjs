@@ -145,11 +145,12 @@ function modelIdsOf(modelsNode, yaml) {
 /**
  * Read what the profile document currently serves for the fabric route.
  * @returns `null` when no route is configured yet, otherwise `{ baseURL, models,
- *   displayName, configurable }`. `configurable` is false only when the baseURL
- *   is a `!!js` expression — a deployment that computes its endpoint is managed
- *   by whoever wrote that expression, not by this module, and is reported so
- *   the watcher can leave it alone instead of fighting it. A route with no
- *   baseURL at all is an absence, not an expression, and stays adoptable.
+ *   displayName, caFile, configurable }`. `configurable` is false only when the
+ *   baseURL is a `!!js` expression — a deployment that computes its endpoint is
+ *   managed by whoever wrote that expression, not by this module, and is
+ *   reported so the watcher can leave it alone instead of fighting it. A route
+ *   with no baseURL at all is an absence, not an expression, and stays
+ *   adoptable. `caFile` is the route's recorded CA path, empty when none.
  */
 export function readFabricRoute(patchPath) {
   const yaml = loadYaml()
@@ -185,11 +186,13 @@ export function readFabricRoute(patchPath) {
   }
 
   const rawName = route.get('displayName')
+  const rawCa = route.get('caFile')
 
   return {
     baseURL: readRouteBaseURL(route),
     models: modelIdsOf(route.get('models', true), yaml),
     displayName: typeof rawName === 'string' ? rawName : '',
+    caFile: typeof rawCa === 'string' ? rawCa : '',
     configurable: !isJsTagged(route.get('baseURL', true))
   }
 }
@@ -208,12 +211,13 @@ function isJsTagged(node) {
   return node !== undefined && node.tag === 'tag:yaml.org,2002:js'
 }
 
-/** The provider entry a resolved plane serves. Capacities and compat switches are the overlay's, unchanged — the fabric's `/v1/models` still reports bare ids and its decoder still drops developer-role prompts. */
-export function houdryProviderConfig({ url, models, displayName }) {
+/** The provider entry a resolved plane serves. Capacities and compat switches are the overlay's, unchanged — the fabric's `/v1/models` still reports bare ids and its decoder still drops developer-role prompts. The route's `caFile` is the pin this connection proved the plane by, so chat verifies against it even when `NODE_EXTRA_CA_CERTS` never saw the plane. */
+export function houdryProviderConfig({ url, models, displayName, caFile = '' }) {
   return {
     displayName: displayName || HOUDRY_ROUTE_DEFAULTS.defaultDisplayName,
     api: HOUDRY_ROUTE_DEFAULTS.api,
     baseURL: url,
+    ...(caFile ? { caFile } : {}),
     apiKeyEnv: HOUDRY_ROUTE_DEFAULTS.apiKeyEnv,
     compat: {
       // The fabric decodes only system/user/assistant turns on its local
@@ -245,7 +249,7 @@ export function houdryProviderConfig({ url, models, displayName }) {
  *   whose baseURL is a `!!js` expression (permanent — someone else's work),
  *   `'io'` a write the filesystem refused this once (retryable).
  */
-export async function writeFabricRoute({ patchPath, url, models, displayName = '' } = {}) {
+export async function writeFabricRoute({ patchPath, url, models, displayName = '', caFile = '' } = {}) {
   const yaml = loadYaml()
   const { withFileLock, writeFileAtomic } = await loadWriteModules()
 
@@ -295,7 +299,7 @@ export async function writeFabricRoute({ patchPath, url, models, displayName = '
         }
       }
 
-      const route = doc.createNode(houdryProviderConfig({ url, models, displayName }))
+      const route = doc.createNode(houdryProviderConfig({ url, models, displayName, caFile }))
 
       if (index < 0) {
         doc.add(doc.createNode({ id: ROUTE_PLUGIN_ID, name: ROUTE_PLUGIN_NAME, config: { providers: { [HOUDRY_ROUTE_KEY]: route } } }))
@@ -424,8 +428,16 @@ export function decideRouteCycle({ saved, discovered, savedReachable = false } =
   }
 
   // One write payload for both rows, so the name an operator gave the route
-  // survives an address change exactly as it survives a catalog change.
-  const write = { api: discovered.api, models: discovered.models, displayName: saved?.displayName || discovered.displayName || '' }
+  // survives an address change exactly as it survives a catalog change. The
+  // CA is the pin this cycle's connection proved the plane by; an adopt to a
+  // new plane takes the new pin, and a refresh keeps the operator's own
+  // `caFile` spelling when the document carries one.
+  const write = {
+    api: discovered.api,
+    models: discovered.models,
+    displayName: saved?.displayName || discovered.displayName || '',
+    caFile: discovered.caFile || ''
+  }
 
   if (saved === null || !sameRouteApi(saved.baseURL, write.api)) {
     return { action: 'adopt', ...write }
