@@ -258,4 +258,44 @@ export function apply(ctx: Context, config: Config): void {
       }
     })
   }
+
+  // Start the Houdry Fabric watcher after successful app readiness.
+  // The watcher maintains the profile patch document's Fabric route as the
+  // control plane moves networks or its catalog changes.
+  ctx.inject(['appReady', 'profileContext', 'subprocess'], (readyCtx) => {
+    const ready = readyCtx.appReady
+    const profileContext = readyCtx.profileContext
+    const subprocess = readyCtx.subprocess
+    if (ready === undefined || profileContext === undefined || subprocess === undefined) {
+      return
+    }
+    ready.onReady(() => {
+      try {
+        const require = createRequire(import.meta.url)
+        const integrationDir = join(dirname(require.resolve('@deepseek-ai/dsh-web-app/package.json')), '../../../integrations/houdry-fabric')
+        const watcherScript = join(integrationDir, 'houdry-fabric-watch.mjs')
+        const { existsSync } = require('node:fs')
+        if (!existsSync(watcherScript)) {
+          console.warn(`web-app: Houdry Fabric watcher script not found at ${watcherScript}; auto-discovery disabled`)
+          return
+        }
+        const handle = subprocess.spawn({
+          argv: [process.execPath, watcherScript, '--parent', String(process.pid)],
+          cwd: process.cwd(),
+          stdio: { stdin: 'ignore', stdout: 'inherit', stderr: 'inherit' },
+          graceMs: 5000,
+          env: { DSH_HOME: profileContext.home },
+        })
+        readyCtx.effect(() => {
+          void handle.done.catch((error: unknown) => {
+            const message = error instanceof Error ? error.message : String(error)
+            console.warn(`web-app: Houdry Fabric watcher exited: ${message}`)
+          })
+        }, 'houdry-fabric-watcher-exit')
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        console.warn(`web-app: failed to start Houdry Fabric watcher: ${message}`)
+      }
+    })
+  })
 }

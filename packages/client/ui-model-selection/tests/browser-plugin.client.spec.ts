@@ -409,6 +409,51 @@ describe('ui-model-selection dual entry', () => {
     })
   })
 
+  it('llm/adapters-updated event refreshes the catalog and picker without remount', async () => {
+    const b = await bench()
+    try {
+      b.mint('s1')
+      const face = b.seat().inject!(sid('s1'))
+      face.load()
+
+      // Verify initial catalog
+      const initialOptions = await b.popup().options(projection('s1'), new AbortController().signal)
+      expect(initialOptions.map((o: SelectOption) => o.label)).toEqual([
+        'DeepSeek-V4-Flash', 'DeepSeek-V4-Pro', 'External Flash',
+      ])
+
+      // Change the catalog to synthetic IDs
+      const updatedGroups = [{
+        id: 'deepseek-official',
+        name: 'DeepSeek',
+        models: [{
+          id: 'synthetic-model-alpha',
+          name: 'Synthetic Alpha',
+          description: 'Test model for refresh validation',
+        }],
+      }]
+      b.setGroups(updatedGroups)
+
+      // Emit the event that the watcher would fire after profile change
+      b.remote.emit('llm/adapters-updated', [])
+
+      // Wait for the catalog store to update
+      await vi.waitFor(() => {
+        expect(b.ctx.modelDirectories.directoryFor(sid('s1')).store.getSnapshot().groups).toEqual(updatedGroups)
+      })
+
+      // Verify the picker options reflect the change without remount
+      const updatedOptions = await b.popup().options(projection('s1'), new AbortController().signal)
+      expect(updatedOptions.map((o: SelectOption) => o.label)).toEqual(['Synthetic Alpha'])
+      expect(updatedOptions.length).toBe(1)
+
+      // Verify the directory store also updated
+      expect(face.directory.getSnapshot().groups).toEqual(updatedGroups)
+    } finally {
+      await b.ctx.fiber.dispose()
+    }
+  })
+
   it('retains the last catalog on refresh failure and recovers on retry', async () => {
     const b = await bench()
     try {
