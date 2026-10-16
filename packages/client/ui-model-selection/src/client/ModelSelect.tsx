@@ -604,6 +604,20 @@ export function ModelSelect(
               {state.status === 'ready' && filteredGroups.length === 0 && (
                 <div className={css.empty} role="status">{t(choices.length === 0 ? 'empty.models' : 'search.empty')}</div>
               )}
+              <div className={css.footer}>
+                <button
+                  type="button"
+                  className={css.refreshButton}
+                  disabled={busy}
+                  onClick={(event) => {
+                    event.preventDefault()
+                    reload()
+                  }}
+                >
+                  {busy ? <StateDot state="ongoing" /> : <IconDataOutlineRegular />}
+                  <span>{t('action.refresh')}</span>
+                </button>
+              </div>
             </>
           )}
 

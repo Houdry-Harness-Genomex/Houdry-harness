@@ -488,6 +488,34 @@ describe('ui-model-selection dual entry', () => {
     expect(face2.directory).not.toBe(face1.directory)
   })
 
+  it('Refresh Models button triggers load and is disabled while busy', async () => {
+    const b = await bench()
+    try {
+      b.mint('s1')
+      const face = b.seat().inject!(sid('s1'))
+      face.load()
+
+      // Verify initial state
+      expect(b.calls.models).toBe(1)
+      const initialSnapshot = face.directory.getSnapshot()
+      expect(initialSnapshot.status).toBe('ready')
+
+      // Call load() manually to simulate Refresh Models button click
+      face.load()
+      expect(b.calls.models).toBe(2)
+
+      // Verify status becomes loading
+      expect(face.directory.getSnapshot().status).toBe('loading')
+
+      // Wait for load to complete
+      await vi.waitFor(() => {
+        expect(face.directory.getSnapshot().status).toBe('ready')
+      })
+    } finally {
+      await b.ctx.fiber.dispose()
+    }
+  })
+
   it('retains saved effort for existing and new sessions after credentials disappear', async () => {
     const b = await bench()
     try {

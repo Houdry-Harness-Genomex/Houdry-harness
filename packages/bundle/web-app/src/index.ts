@@ -184,6 +184,22 @@ export const internals: {
  * @param config - validated {@link Config}.
  */
 export function apply(ctx: Context, config: Config): void {
+  // Load Fabric CA trust at boot for HTTPS requests to the control plane
+  let restoreFabricCATrust: (() => void) | null = null
+  try {
+    const require = createRequire(import.meta.url)
+    const integrationDir = join(dirname(require.resolve('@deepseek-ai/dsh-web-app/package.json')), '../../../integrations/houdry-fabric')
+    const caModule = require(join(integrationDir, 'houdry-ca-dispatcher.mjs'))
+    console.log('web-app: loading Fabric CA trust from', integrationDir)
+    // Load CA trust synchronously at boot; this works because NODE_EXTRA_CA_CERTS
+    // is read once at process startup for Node's TLS, but undici may reload it at runtime
+    restoreFabricCATrust = caModule.loadFabricCATrust?.() ?? null
+    console.log('web-app: Fabric CA trust loaded', restoreFabricCATrust ? 'successfully' : '(no-op)')
+  } catch (error) {
+    console.warn('web-app: failed to load Fabric CA trust:', error)
+    // Fabric integration may not be present or may fail to load; continue without it
+  }
+
   // The schema validates a present string; an explicit YAML `null` bypasses
   // the string transform and reaches here, meaning unset.
   const publicUrl = config.publicUrl ?? undefined
@@ -287,10 +303,12 @@ export function apply(ctx: Context, config: Config): void {
           env: { DSH_HOME: profileContext.home },
         })
         readyCtx.effect(() => {
-          void handle.done.catch((error: unknown) => {
-            const message = error instanceof Error ? error.message : String(error)
-            console.warn(`web-app: Houdry Fabric watcher exited: ${message}`)
-          })
+          return () => {
+            void handle.done.catch((error: unknown) => {
+              const message = error instanceof Error ? error.message : String(error)
+              console.warn(`web-app: Houdry Fabric watcher exited: ${message}`)
+            })
+          }
         }, 'houdry-fabric-watcher-exit')
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
@@ -298,4 +316,9 @@ export function apply(ctx: Context, config: Config): void {
       }
     })
   })
+
+  // Restore original CA trust on plugin disposal
+  if (restoreFabricCATrust) {
+    ctx.effect(() => () => restoreFabricCATrust(), 'houdry-fabric-ca-trust')
+  }
 }
