@@ -1,28 +1,45 @@
-# DeepSeek Harness
+# Houdry Harness
 
 English | [中文](README.zh.md)
 
-DeepSeek Harness (`dsh`) is an open-source agent harness developed by [DeepSeek AI](https://deepseek.com).
+**Private agentic harness for organizations running [Houdry](https://github.com/houdry-genomex/houdry).**
+
+Houdry Harness is the agent orchestration layer: task planning, tool coordination, and workflow execution. GPU servers run the **Houdry fabric** (`houdry serve` + `houdry node join`); this harness talks to that fabric over the OpenAI-compatible API (`POST /v1/chat/completions`).
 
 It is built on an **everything-is-a-plugin** architecture and powered by [Cordis](https://github.com/cordiverse/cordis), whose design is described in [_A Programming Paradigm for Spatiotemporal Composability_](https://arxiv.org/abs/2608.25512).
 
-Documentation: [https://deepseek-harness.github.io/deepseek-harness/](https://deepseek-harness.github.io/deepseek-harness/)
+## Built on DeepSeek Harness
+
+This project is a fork of **[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)** (`dsh`) developed by [DeepSeek AI](https://deepseek.com) (MIT License).
+
+- Upstream: https://github.com/deepseek-ai/deepseek-harness
+- Docs: https://deepseek-harness.github.io/deepseek-harness/
+- Attribution: see [NOTICE](NOTICE) and [UPSTREAM.md](UPSTREAM.md)
+
+DeepSeek Harness is open source and can be used by anyone. Houdry Harness redistributes and rebrands it for the Houdry product split (fabric for servers, harness for orchestration).
+
+## Who installs what
+
+| Role | Install |
+|------|---------|
+| GPU / ops | [harness-fabric](https://github.com/Houdry-Harness-Genomex/harness-fabric) — `serve`, `node join`, models |
+| Normal user | **Houdry Harness** (this repo) — Agent orchestration → fabric URL |
 
 ## Developer preview
 
-DeepSeek Harness is in _developer preview_ and iterating rapidly. **THERE WILL BE COMPATIBILITY-BREAKING CHANGES.**
+Houdry Harness is in _developer preview_ and iterating rapidly. **THERE WILL BE COMPATIBILITY-BREAKING CHANGES.**
 
 Review the [safety notice](SAFETY.md) before running the project.
 
 ---
 
-# 🌐 TinyFish — Public Web Intelligence for Houdry Agent
+# 🌐 TinyFish — Public Web Intelligence for Houdry Harness
 
-**TinyFish extends Houdry Agent beyond private model knowledge by bringing live public-web research directly into the DeepSeek Harness workflow.**
+**TinyFish extends Houdry Harness beyond private model knowledge by bringing live public-web research directly into the agent workflow.**
 
 Houdry brings together agent orchestration, distributed private inference, and external information retrieval in one workflow. TinyFish plays a key role by enabling the agent to research public websites, retrieve current information, and gather evidence that can be analyzed by its configured models.
 
-Rather than treating web research as a separate activity, the integration makes it part of the agent's broader problem-solving process. DeepSeek Harness coordinates the task, TinyFish retrieves relevant public information, and Houdry Fabric provides the private model-inference infrastructure used to analyze results and produce useful outputs.
+Rather than treating web research as a separate activity, the integration makes it part of the agent's broader problem-solving process. Houdry Harness coordinates the task, TinyFish retrieves relevant public information, and Houdry Fabric provides the private model-inference infrastructure used to analyze results and produce useful outputs.
 
 ## Why TinyFish Is an Integral Part of the Project
 
@@ -40,7 +57,7 @@ TinyFish expands the capabilities of the overall system. It complements the priv
 
 ## 🏗️ Architecture
 
-The architecture connects three primary capabilities: **DeepSeek Harness for orchestration, TinyFish for public-web intelligence, and Houdry Fabric for private inference.** The Public Research Gateway governs the information flowing to the external research service.
+The architecture connects three primary capabilities: **Houdry Harness for orchestration, TinyFish for public-web intelligence, and Houdry Fabric for private inference.** The Public Research Gateway governs the information flowing to the external research service.
 
 ```mermaid
 flowchart TB
@@ -50,7 +67,7 @@ flowchart TB
     %% Layer 1: Agent Orchestration
     subgraph ORCHESTRATION["🎯 LAYER 1: AGENT ORCHESTRATION"]
         direction TB
-        HARNESS["<b>DeepSeek Harness</b><br/>Houdry Agent Core<br/>━━━━━━━━━━━━━━━━<br/>• Task Planning & Reasoning<br/>• Tool Orchestration<br/>• Workflow Coordination"]
+        HARNESS["<b>Houdry Harness</b><br/>Agent Orchestration Core<br/>━━━━━━━━━━━━━━━━<br/>• Task Planning & Reasoning<br/>• Tool Orchestration<br/>• Workflow Coordination"]
         DECISION{"🤔 Does task need<br/>live web research?"}
         ANALYSIS["<b>Evidence Analysis</b><br/>━━━━━━━━━━━━━━<br/>• Synthesize findings<br/>• Combine sources<br/>• Generate deliverable"]
 
@@ -153,7 +170,7 @@ These protections should be enforced in code and verified with tests. Prompt ins
 |---|---|
 | **TinyFish** | Public-web research and information retrieval |
 | **Public Research Gateway** | Request validation, data minimization, and outbound security controls |
-| **DeepSeek Harness** | Agent reasoning, planning, tool orchestration, and task coordination |
+| **Houdry Harness** | Agent reasoning, planning, tool orchestration, and task coordination |
 | **Houdry Fabric** | Private model inference, model routing, and distributed GPU-worker execution |
 | **Configured Houdry models** | Analysis, synthesis, summarization, and deliverable generation |
 
@@ -180,43 +197,72 @@ Security tests should verify prohibited-data rejection, destination and redirect
 
 ## 🎯 Project Vision
 
-TinyFish is an important part of making Houdry Agent research-capable: it connects agent workflows to current public information, while Houdry Fabric provides the infrastructure for private inference.
+TinyFish is an important part of making Houdry Harness research-capable: it connects agent workflows to current public information, while Houdry Fabric provides the infrastructure for private inference.
 
-**TinyFish connects the agent to the public web. DeepSeek Harness turns research into a workflow. Houdry Fabric powers private inference. The Public Research Gateway defines the security boundary between them.**
+**TinyFish connects the agent to the public web. Houdry Harness turns research into a workflow. Houdry Fabric powers private inference. The Public Research Gateway defines the security boundary between them.**
 
 ---
 
-## Run
+## Quick start (with a local fabric)
 
-### Run from `npm`
+**1. Fabric (GPU machine)**
+
+```bash
+curl -fsSL https://github.com/Houdry-Harness-Genomex/harness-fabric/releases/latest/download/install.sh | sh
+export PATH="$HOME/.houdry/bin:$PATH"
+houdry serve --listen 0.0.0.0:18080
+# other terminal:
+houdry node join --server https://127.0.0.1:18080
+```
+
+**2. Harness configuration**
+
+On first run, configure the **Houdry Fabric URL** (recommended): `https://127.0.0.1:18080/v1` (or your LAN/Tailscale fabric host). Optional API key: `houdry`.
+
+Equivalent YAML:
+
+```yaml
+# ~/.houdry-harness/config.yaml
+model:
+  provider: custom
+  base_url: https://127.0.0.1:18080/v1
+  default: auto
+```
+
+```bash
+# ~/.houdry-harness/.env
+OPENAI_API_KEY=houdry
+```
+
+**3. Run from `npm`**
 
 Install `Node.js`, then run:
 
 ```sh
-npx @deepseek-ai/dsh web
+npx @houdry/harness web
 ```
 
-The command starts the Web UI at `http://127.0.0.1:3080` by default and opens it in the default browser for a local launch. An SSH launch only prints the host URL because the SSH client or editor owns the local forwarded address. Pass `--no-open` to run the server without opening a browser. See [Web UI guide](docs/user/guide/index.md).
+The command starts the Web UI at `http://127.0.0.1:3080` by default and opens it in the default browser for a local launch. An SSH launch only prints the host URL because the SSH client or editor owns the local forwarded address. Pass `--no-open` to run the server without opening a browser.
 
-### Run from source
+**4. Run from source**
 
 To run from a repository checkout:
 
 ```sh
-git clone https://github.com/deepseek-ai/deepseek-harness.git
-cd deepseek-harness
+git clone https://github.com/Houdry-Harness-Genomex/Houdry-harness.git
+cd Houdry-harness
 pnpm install
 pnpm run build
-pnpm dsh web
+pnpm harness web
 ```
 
-`pnpm run build` prepares the repository artifacts. `pnpm dsh web` uses those built artifacts without rebuilding.
+`pnpm run build` prepares the repository artifacts. `pnpm harness web` uses those built artifacts without rebuilding.
 
 ## Community and support
 
-- Submit feedback or bug reports through [GitHub Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions).
-- Add the [`dsh-plugin`](https://github.com/topics/dsh-plugin) topic to your plugin repository for discoverability.
-- Join <a href="https://discord.gg/4MrtZUhpxg">DeepSeek Harness Discord community</a>.
+- Submit feedback or bug reports through [GitHub Discussions](https://github.com/Houdry-Harness-Genomex/Houdry-harness/discussions).
+- Add the [`houdry-harness-plugin`](https://github.com/topics/houdry-harness-plugin) topic to your plugin repository for discoverability.
+- Join the Houdry community channels.
 
 ## Contributing
 
@@ -233,12 +279,12 @@ For agents, follow [AGENTS.md](AGENTS.md).
 ## Citation
 
 ```bibtex
-@misc{deepseek-harness2026,
-  title={DeepSeek Harness: Everything is a Plugin},
-  author={DeepSeek-AI},
+@misc{houdry-harness2026,
+  title={Houdry Harness: Private Agentic Orchestration},
+  author={Houdry-Harness-Genomex},
   year={2026},
   publisher={GitHub},
-  howpublished={\url{https://github.com/deepseek-ai/deepseek-harness}},
+  howpublished={\url{https://github.com/Houdry-Harness-Genomex/Houdry-harness}},
 }
 ```
 
