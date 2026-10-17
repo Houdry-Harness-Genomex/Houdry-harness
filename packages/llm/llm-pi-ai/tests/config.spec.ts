@@ -107,3 +107,25 @@ describe('request image policy bounds', () => {
     }).toThrow(message)
   })
 })
+
+describe('route CA file boundary', () => {
+  type Materialized = { providers: Record<string, { caFile?: string }> }
+
+  it('resolves a declared caFile onto the route and leaves an absent one undefined', () => {
+    const declared = routeWith({ caFile: '/etc/houdry/plane-ca.pem' })() as Materialized
+    expect(declared.providers['acme-gateway']?.caFile).toBe('/etc/houdry/plane-ca.pem')
+    const absent = configWith({})() as Materialized
+    expect(absent.providers['acme-gateway']?.caFile).toBeUndefined()
+  })
+
+  it('refuses a whitespace-only caFile at resolution', () => {
+    expect(() => resolveProfiles({
+      'acme-gateway': {
+        api: 'openai-completions',
+        baseURL: 'https://acme.test',
+        caFile: '   ',
+        models: [{ id: 'm' }],
+      },
+    })).toThrow(/"acme-gateway" has an empty caFile/)
+  })
+})

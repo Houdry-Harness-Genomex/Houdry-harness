@@ -1,0 +1,91 @@
+# Bilingual-pair consistency record for houdry-fabric.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/providers/houdry-fabric.md
+/houdry-fabric-provider:
+  en: b67264f80e51451b
+  zh: 2f2b180c5a0c293e
+/houdry-fabric-provider/what-is-houdry:
+  en: 2714b47425506b9b
+  zh: 068c2890176bd519
+/houdry-fabric-provider/architecture:
+  en: a7e56472b11bd3c8
+  zh: 6150d900a0920ce9
+/houdry-fabric-provider/setup:
+  en: 0ecddf15e1aff85f
+  zh: 23e43973b01feeb6
+/houdry-fabric-provider/setup/1-install-and-start-houdry-fabric:
+  en: 8973048c510185a3
+  zh: 32b31f2653562ffc
+/houdry-fabric-provider/setup/2-add-gpu-workers:
+  en: 369cc7e0df575c4a
+  zh: 8f6cc89531ff00c2
+/houdry-fabric-provider/setup/3-start-deepseek-harness-against-the-fabric:
+  en: ad559d933d35a9c1
+  zh: 363bcd61df966b99
+/houdry-fabric-provider/setup/4-or-configure-the-provider-by-hand:
+  en: 235aa197bfa16667
+  zh: 9eeac8d4996c402b
+/houdry-fabric-provider/usage:
+  en: 63bfd61a0561b255
+  zh: 23816953c89cecf5
+/houdry-fabric-provider/usage/model-selection:
+  en: 165738b73d728d6a
+  zh: 8e8ba4ed8a710c8e
+/houdry-fabric-provider/usage/function-calling:
+  en: 5ec90f2b066ce6d8
+  zh: f6b254476de636c9
+/houdry-fabric-provider/usage/streaming:
+  en: 9759d9f8484cafcc
+  zh: 8addadd9f5518286
+/houdry-fabric-provider/verification:
+  en: ab8e57997d998d24
+  zh: 68ff4dd173232b0a
+/houdry-fabric-provider/verification/checking-the-plane-through-node:
+  en: be4db92f0ad0e544
+  zh: a67ad16b607fc5f6
+/houdry-fabric-provider/verification/checking-the-web-ui:
+  en: 038279d872b01454
+  zh: 5cc3b1e7a7c4dc35
+/houdry-fabric-provider/troubleshooting:
+  en: 659a188b36f9c326
+  zh: 73b45885ed92f2ea
+/houdry-fabric-provider/troubleshooting/certificate-errors:
+  en: 2ee32809840fbdda
+  zh: 27c0dbfee0c31407
+/houdry-fabric-provider/troubleshooting/no-models-available:
+  en: 91ebca477125a524
+  zh: c457ef71771b2dd5
+/houdry-fabric-provider/troubleshooting/request-timeout:
+  en: 4de0cb848f8da636
+  zh: 2c2d7ca7c3d1b420
+/houdry-fabric-provider/troubleshooting/model-not-found:
+  en: d9e8d2816bdf0c09
+  zh: 27713eb40aeb2706
+/houdry-fabric-provider/troubleshooting/asked-for-the-token-again-after-a-restart:
+  en: 04da0466ecdb2a3b
+  zh: 0227c56a6ebfee07
+/houdry-fabric-provider/troubleshooting/the-plane-is-reachable-but-never-discovered:
+  en: 2a08a037d0381d2a
+  zh: 0de74cf2af722e51
+/houdry-fabric-provider/configuration-reference:
+  en: 14123d2de945c677
+  zh: 7005a997d5988227
+/houdry-fabric-provider/configuration-reference/provider-fields:
+  en: e86de6f1ca3b4761
+  zh: d965fbda71ab2a01
+/houdry-fabric-provider/configuration-reference/environment-variables:
+  en: e926a462cb8de8f2
+  zh: 9d7eb3653d282fbc
+/houdry-fabric-provider/security:
+  en: 938d87479377b2e7
+  zh: ce1c94b438dc8fce
+/houdry-fabric-provider/links:
+  en: 3991ee25f2715589
+  zh: d82ec0ef1a94d718
+/houdry-fabric-provider/comparison-houdry-vs-local-ollama:
+  en: 76fa39358c10c370
+  zh: 7452d454f39e0668
+/houdry-fabric-provider/summary:
+  en: 409cf2bec9e28155
+  zh: 2232c05a1bdce844

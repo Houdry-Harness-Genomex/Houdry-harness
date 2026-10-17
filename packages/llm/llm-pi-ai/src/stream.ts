@@ -37,8 +37,10 @@ export function mapUsage(usage: PiUsage): TokenUsage {
 // `cause` chain before it reaches us. undici carries the actionable transport
 // detail on `cause` (e.g. `SocketError: other side closed`) but hands the fetch
 // wrapper a bare `terminated`, so we are left pattern-matching terse words here.
-// If pi-ai ever forwards the original Error (or a fetch/dispatcher hook that lets
-// us capture the cause ourselves), classify on `code`/`cause` instead of text.
+// Routes with a `caFile` partially close that gap: their fetch records the real
+// cause chain per origin (`ca-fetch.ts`), and the generic "Connection error."
+// the OpenAI SDK reports is enriched with it below. Classification on
+// `code`/`cause` still needs pi-ai to forward the original Error.
 function classifyPiAiError(message: string): string {
   if (/\b(?:401|403)\b/.test(message)) return 'AUTH'
   if (isQuotaExceededError(message)) return QUOTA_EXCEEDED_CODE
@@ -71,13 +73,16 @@ function classifyPiAiError(message: string): string {
  * Map a terminal pi-ai event to the harness finish reason.
  * @param message - the assistant message carried by the `done` or `error` event.
  * @param contextWindow - resolved catalog capacity for usage-based overflow detection.
+ * @param transportDetail - reads the recorded transport-failure detail for the
+ *   route's origin, consulted when the error is the OpenAI SDK's generic
+ *   "Connection error." and the actionable cause would otherwise be lost.
  * @returns the mapped harness reason. Recognized error text, `stop` usage above
  *   `contextWindow`, and zero-output `length` usage that fills the window map
  *   to `CONTEXT_WINDOW_EXCEEDED`; a `stop` with no content blocks maps to an
  *   `EMPTY_RESPONSE` error, while terminal `pending` and `deferred` states map
  *   to non-retryable `PI_AI_ERROR` failures.
  */
-export function mapStopReason(message: AssistantMessage, contextWindow?: number): FinishReason {
+export function mapStopReason(message: AssistantMessage, contextWindow?: number, transportDetail?: () => string | undefined): FinishReason {
   const piAiOverflow = isContextOverflow(message, contextWindow)
   const harnessOverflow = message.stopReason === 'error'
     && message.errorMessage !== undefined
@@ -122,7 +127,11 @@ export function mapStopReason(message: AssistantMessage, contextWindow?: number)
     }
     case 'error': {
       const text = message.errorMessage ?? 'pi-ai stream error'
-      return { kind: 'error', failure: { message: text, code: classifyPiAiError(text) } }
+      // The OpenAI SDK's fixed connection-failure message; the ca-fetch wrapper
+      // recorded the real cause chain for this route's origin.
+      const detail = text === 'Connection error.' ? transportDetail?.() : undefined
+      const reported = detail === undefined ? text : `${text} (${detail})`
+      return { kind: 'error', failure: { message: reported, code: classifyPiAiError(reported) } }
     }
   }
 }
@@ -136,6 +145,9 @@ export function mapStopReason(message: AssistantMessage, contextWindow?: number)
  * @param callerSignal - caller cancellation state; an aborted caller makes any
  *   in-band terminal error an aborted finish.
  * @param requestedModel - request model identity recorded for durable replay.
+ * @param transportDetail - reads the recorded transport-failure detail for the
+ *   route's origin, consulted when the error is the OpenAI SDK's generic
+ *   "Connection error." and the actionable cause would otherwise be lost.
  * @returns the harness chunks, ending with `usage` then `finish`; throws
  *   `LlmError` (`STREAM_CLOSED`) if the source ends without a terminal event.
  */
@@ -144,6 +156,7 @@ export async function* toStreamChunks(
   contextWindow?: number,
   callerSignal?: AbortSignal,
   requestedModel?: string,
+  transportDetail?: () => string | undefined,
 ): AsyncGenerator<StreamChunk> {
   // pi-ai contentIndex ↔ our block index map 1:1 (both count blocks from 0
   // in stream order), but we track ids per index for tool calls.
@@ -222,6 +235,7 @@ export async function* toStreamChunks(
           reason: mapStopReason(
             callerSignal?.aborted ? { ...event.error, stopReason: 'aborted' } : event.error,
             contextWindow,
+            transportDetail,
           ),
         }
         return

@@ -835,6 +835,38 @@ describe('toStreamChunks', () => {
     ])
   })
 
+  it('enriches the SDK connection failure with the recorded transport detail', async () => {
+    const error = assistant({ stopReason: 'error', errorMessage: 'Connection error.' })
+    const chunks = await collect(toStreamChunks(
+      feed({ type: 'error', reason: 'error', error }),
+      undefined, undefined, undefined,
+      () => 'unable to verify the first certificate [UNABLE_TO_VERIFY_LEAF_SIGNATURE]',
+    ))
+    expect(chunks.at(-1)).toEqual({
+      type: 'finish',
+      reason: {
+        kind: 'error',
+        failure: {
+          message: 'Connection error. (unable to verify the first certificate [UNABLE_TO_VERIFY_LEAF_SIGNATURE])',
+          code: 'TRANSPORT',
+        },
+      },
+    })
+  })
+
+  it('leaves non-connection failures unenriched even when a detail is recorded', async () => {
+    const error = assistant({ stopReason: 'error', errorMessage: 'boom' })
+    const chunks = await collect(toStreamChunks(
+      feed({ type: 'error', reason: 'error', error }),
+      undefined, undefined, undefined,
+      () => 'stale recorded detail',
+    ))
+    expect(chunks.at(-1)).toEqual({
+      type: 'finish',
+      reason: { kind: 'error', failure: { message: 'boom', code: 'PI_AI_ERROR' } },
+    })
+  })
+
   it('maps aborted error events to aborted finish', async () => {
     const error = assistant({ stopReason: 'aborted' })
     const chunks = await collect(toStreamChunks(feed({ type: 'error', reason: 'aborted', error })))

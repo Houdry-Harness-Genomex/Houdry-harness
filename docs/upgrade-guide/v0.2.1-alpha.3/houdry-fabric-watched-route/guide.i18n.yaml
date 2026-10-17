@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.1-alpha.3/houdry-fabric-watched-route/guide.md
+/:
+  en: 2c9c0ffbf03b53b5
+  zh: 14f4c6f3215e5e24
+/houdry-fabric-uses-a-watched-profile-route:
+  en: d23ef026d895e2c7
+  zh: 9babf3eab29b10a1
+/houdry-fabric-uses-a-watched-profile-route/change:
+  en: cf655e3b500b86ce
+  zh: 8b42abd97600aec6
+/houdry-fabric-uses-a-watched-profile-route/migration:
+  en: c6fe93d2bd1e4074
+  zh: 17a2b79ca8f7fffe

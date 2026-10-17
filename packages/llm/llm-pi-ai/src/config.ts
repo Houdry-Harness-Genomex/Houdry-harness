@@ -103,6 +103,15 @@ export interface PiAiProviderProfile {
   /** Endpoint for this route's models; defaults to the installed catalog's endpoint. */
   baseURL?: string
   /**
+   * PEM file holding the CA certificate(s) that vouch for this route's
+   * endpoint — for a plane whose certificate no launch-time trust covers
+   * (one adopted mid-flight by a watcher, or any route the system store does
+   * not know). Requests on the route are verified against it; verification
+   * itself is never relaxed. Re-read per request, so the plane can rotate its
+   * certificate without a configuration change.
+   */
+  caFile?: string
+  /**
    * This route's model catalog. Omission serves the installed catalog for the
    * route unchanged; an explicit list replaces it, each entry defaulting its
    * unset fields from the installed model of the same id.
@@ -328,6 +337,7 @@ const profile = z.object({
   displayName: z.string(),
   api: z.union(supportedProtocols()),
   baseURL: z.string(),
+  caFile: z.string(),
   models: z.array(modelProfile),
   modelOverrides: z.dict(modelOverride),
   compat: compatProfile,
@@ -421,6 +431,9 @@ export function resolveProfiles(
     if (provider.length === 0) throw new Error('llm-pi-ai: provider names must be non-empty')
     if (source.baseURL !== undefined && source.baseURL.length === 0) {
       throw new Error(`llm-pi-ai: provider "${provider}" has an empty baseURL`)
+    }
+    if (source.caFile !== undefined && source.caFile.trim().length === 0) {
+      throw new Error(`llm-pi-ai: provider "${provider}" has an empty caFile`)
     }
     if (source.displayName !== undefined && source.displayName.length === 0) {
       throw new Error(`llm-pi-ai: provider "${provider}" has an empty displayName`)

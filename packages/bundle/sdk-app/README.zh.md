@@ -44,7 +44,7 @@ Python 运行时向本 profile 提供显式下载的创作资源和 Office sidec
 
 #### 模型看到什么
 
-profile 继承 base 系统提示词，包括 `You are an AI agent powered by DeepSeek Harness.` 身份说明，不额外添加特定任务的 persona。每个 Session 通过 [`dsh-working-directory`](../../session/working-directory/README.zh.md) 提供的必需 user-role 上下文接收当前目录。默认文件工具 schema 包含 `read`、`write` 和 `edit`，不包含 `str_replace_editor`。
+profile 继承 base 系统提示词，包括 `You are an AI agent powered by Houdry Harness.` 身份说明，不额外添加特定任务的 persona。每个 Session 通过 [`dsh-working-directory`](../../session/working-directory/README.zh.md) 提供的必需 user-role 上下文接收当前目录。默认文件工具 schema 包含 `read`、`write` 和 `edit`，不包含 `str_replace_editor`。
 
 #### Token 影响
 

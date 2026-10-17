@@ -18,6 +18,11 @@ export interface ModelSelectInjected {
   /** Ensure the shared advisory catalog is loaded (errors land on the store). */
   load: () => void
   /**
+   * Force a catalog reload even when the last load resolved (the Refresh
+   * Models control); errors land on the store.
+   */
+  refresh: () => void
+  /**
    * Select a complete provider/model/reasoning selection.
    * @param selection - model selection and optional adapter-owned effort.
    * @returns the Host outcome, or undefined when this Session cannot select a model.
