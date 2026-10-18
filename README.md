@@ -8,9 +8,13 @@ Houdry Harness is the agent orchestration layer: task planning, tool coordinatio
 
 It is built on an **everything-is-a-plugin** architecture and powered by [Cordis](https://github.com/cordiverse/cordis), whose design is described in [_A Programming Paradigm for Spatiotemporal Composability_](https://arxiv.org/abs/2608.25512).
 
-## Built on DeepSeek Harness
+## Houdry Harness - A harness that grows with u
 
-This project is a fork of **[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)** (`dsh`) developed by [DeepSeek AI](https://deepseek.com) (MIT License).
+Built on an **everything-is-a-plugin** architecture, Houdry Harness adapts to your workflow and scales with your needs.
+
+Learn more at **[houdry.live](https://www.houdry.live/)**
+
+This project is a fork of **[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)** (`dsh`) developed by DeepSeek AI (MIT License).
 
 - Upstream: https://github.com/deepseek-ai/deepseek-harness
 - Docs: https://deepseek-harness.github.io/deepseek-harness/
